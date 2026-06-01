@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { ChevronLeft, ChevronRight, List, Settings2 } from 'lucide-vue-next'
@@ -16,11 +16,13 @@ const reader = useReaderStore()
 const settings = useSettingsStore()
 const chapterDrawer = ref(false)
 const settingsDrawer = ref(false)
+const readerMenuOpen = ref(false)
 const bookId = Number(route.params.bookId)
 const { save } = useReaderProgress(bookId)
 
 const activeChapter = computed(() => reader.chapters.find((chapter) => chapter.id === reader.activeChapterId) || null)
 const activeContent = ref<string>('')
+const readerTopRef = ref<HTMLElement | null>(null)
 
 function chapterIndexById(id: number | null) {
   return id ? reader.chapters.findIndex((chapter) => chapter.id === id) : -1
@@ -40,6 +42,10 @@ function nextChapter() {
   }
 }
 
+function openReaderMenu() {
+  readerMenuOpen.value = true
+}
+
 function updateTheme(value: ThemeName) {
   settings.setTheme(value)
 }
@@ -52,10 +58,17 @@ function updateFontSize(value: number) {
   settings.updateReaderSettings({ font_size: value })
 }
 
+async function scrollReaderToTop() {
+  await nextTick()
+  readerTopRef.value?.scrollIntoView({ block: 'start' })
+  window.scrollTo({ top: 0, behavior: 'auto' })
+}
+
 async function loadChapter(chapterId: number) {
   reader.activeChapterId = chapterId
   const content = await reader.loadChapterContent(bookId, chapterId)
   activeContent.value = content.content
+  await scrollReaderToTop()
   const progressType = reader.bookMeta?.format === 'pdf' ? 'pdf_page' : reader.bookMeta?.format === 'txt' ? 'txt_offset' : 'epub_cfi'
   save(progressType, String(chapterId), Math.round(((reader.chapters.findIndex((item) => item.id === chapterId) + 1) / Math.max(reader.chapters.length, 1)) * 100))
 }
@@ -92,12 +105,17 @@ watch(
           设置
         </n-button>
       </template>
-      <div class="reader-topline surface">
+      <div ref="readerTopRef" class="reader-topline surface">
         <div>{{ activeChapter?.title || '未选择章节' }}</div>
         <div class="muted">{{ reader.progress?.progress_type || reader.bookMeta.format }}</div>
       </div>
       <section class="reader-panel surface">
         <div v-if="activeContent" class="reader-content" v-html="activeContent" />
+        <div v-if="activeContent" class="reader-tap-zones">
+          <button type="button" class="reader-tap-zone" aria-label="点击左侧切换上一章" :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="prevChapter()" />
+          <button type="button" class="reader-tap-zone" aria-label="点击中间打开阅读菜单" @click="openReaderMenu()" />
+          <button type="button" class="reader-tap-zone" aria-label="点击右侧切换下一章" :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= reader.chapters.length - 1" @click="nextChapter()" />
+        </div>
         <EmptyState v-else title="暂无章节内容" description="后端未返回正文时可重试加载。">
           <n-button secondary @click="reader.loadChapters(bookId)">重试</n-button>
         </EmptyState>
@@ -152,6 +170,30 @@ watch(
       </div>
     </n-drawer-content>
   </n-drawer>
+
+  <n-modal v-model:show="readerMenuOpen">
+    <section class="reader-menu surface">
+      <div class="reader-menu-title">{{ activeChapter?.title || reader.bookMeta?.title || '阅读菜单' }}</div>
+      <div class="reader-menu-actions">
+        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="readerMenuOpen = false; prevChapter()">
+          <template #icon><ChevronLeft :size="16" /></template>
+          上一章
+        </n-button>
+        <n-button secondary @click="readerMenuOpen = false; chapterDrawer = true">
+          <template #icon><List :size="16" /></template>
+          目录
+        </n-button>
+        <n-button secondary @click="readerMenuOpen = false; settingsDrawer = true">
+          <template #icon><Settings2 :size="16" /></template>
+          设置
+        </n-button>
+        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= reader.chapters.length - 1" @click="readerMenuOpen = false; nextChapter()">
+          <template #icon><ChevronRight :size="16" /></template>
+          下一章
+        </n-button>
+      </div>
+    </section>
+  </n-modal>
 </template>
 
 <style scoped>
@@ -168,11 +210,50 @@ watch(
 }
 
 .reader-panel {
+  position: relative;
   min-height: 54vh;
+}
+
+.reader-tap-zones {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  pointer-events: none;
+}
+
+.reader-tap-zone {
+  min-width: 0;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  pointer-events: auto;
+  touch-action: pan-y;
 }
 
 .reader-bottom {
   justify-content: center;
+}
+
+.reader-menu {
+  width: min(520px, calc(100vw - 32px));
+  padding: 16px;
+}
+
+.reader-menu-title {
+  margin-bottom: 14px;
+  color: var(--color-text-main);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.reader-menu-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .chapter-list {

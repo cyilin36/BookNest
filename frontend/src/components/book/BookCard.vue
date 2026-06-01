@@ -51,7 +51,7 @@ const isShelf = computed(() => props.mode === 'bookshelf' && 'source_type' in pr
       </div>
       <div class="book-actions">
         <template v-if="mode === 'bookshelf' && 'readable' in book">
-          <n-button size="small" type="primary" :disabled="!book.readable" @click="emit('read')">阅读</n-button>
+          <n-button class="book-primary-action" size="small" type="primary" :disabled="!book.readable" @click="emit('read')">阅读</n-button>
           <n-button size="small" quaternary circle @click="emit('toggleFavorite')">
             <Star :size="16" :fill="book.favorite ? 'currentColor' : 'none'" />
           </n-button>
@@ -61,7 +61,7 @@ const isShelf = computed(() => props.mode === 'bookshelf' && 'source_type' in pr
           <n-button size="small" quaternary type="error" @click="emit('remove')">移除</n-button>
         </template>
         <template v-else-if="mode === 'library' && 'in_bookshelf' in book">
-          <n-button size="small" type="primary" :disabled="book.in_bookshelf" @click="emit('join')">
+          <n-button class="book-primary-action" size="small" type="primary" :disabled="book.in_bookshelf" @click="emit('join')">
             {{ book.in_bookshelf ? '已在书架' : '加入书架' }}
           </n-button>
           <n-button size="small" secondary @click="emit('open')">详情</n-button>
@@ -144,5 +144,22 @@ const isShelf = computed(() => props.mode === 'bookshelf' && 'source_type' in pr
   align-items: center;
   gap: 6px;
   margin-top: auto;
+}
+
+.book-primary-action:not(:disabled) {
+  --n-color: var(--color-primary) !important;
+  --n-color-hover: var(--color-primary-hover) !important;
+  --n-color-pressed: var(--color-primary) !important;
+  --n-color-focus: var(--color-primary-hover) !important;
+  --n-border: 1px solid var(--color-primary) !important;
+  --n-border-hover: 1px solid var(--color-primary-hover) !important;
+  --n-border-pressed: 1px solid var(--color-primary) !important;
+  --n-border-focus: 1px solid var(--color-primary-hover) !important;
+  --n-text-color: #ffffff !important;
+  --n-text-color-hover: #ffffff !important;
+  --n-text-color-pressed: #ffffff !important;
+  --n-text-color-focus: #ffffff !important;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(24, 160, 88, 0.18);
 }
 </style>
