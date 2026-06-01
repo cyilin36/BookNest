@@ -51,7 +51,7 @@ const isShelf = computed(() => props.mode === 'bookshelf' && 'source_type' in pr
       </div>
       <div class="book-actions">
         <template v-if="mode === 'bookshelf' && 'readable' in book">
-          <n-button class="book-primary-action" size="small" type="primary" :disabled="!book.readable" @click="emit('read')">阅读</n-button>
+          <n-button class="book-primary-action book-read-action" size="small" type="primary" :disabled="!book.readable" @click="emit('read')">阅读</n-button>
           <n-button size="small" quaternary circle @click="emit('toggleFavorite')">
             <Star :size="16" :fill="book.favorite ? 'currentColor' : 'none'" />
           </n-button>
@@ -146,7 +146,7 @@ const isShelf = computed(() => props.mode === 'bookshelf' && 'source_type' in pr
   margin-top: auto;
 }
 
-.book-primary-action:not(:disabled) {
+.book-primary-action {
   --n-color: var(--color-primary) !important;
   --n-color-hover: var(--color-primary-hover) !important;
   --n-color-pressed: var(--color-primary) !important;
@@ -160,6 +160,17 @@ const isShelf = computed(() => props.mode === 'bookshelf' && 'source_type' in pr
   --n-text-color-pressed: #ffffff !important;
   --n-text-color-focus: #ffffff !important;
   font-weight: 700;
+}
+
+.book-primary-action:not(:disabled) {
   box-shadow: 0 1px 2px rgba(24, 160, 88, 0.18);
+}
+
+.book-read-action:disabled {
+  --n-color-disabled: var(--color-primary) !important;
+  --n-border-disabled: 1px solid var(--color-primary) !important;
+  --n-text-color-disabled: #ffffff !important;
+  --n-opacity-disabled: 1 !important;
+  cursor: not-allowed;
 }
 </style>

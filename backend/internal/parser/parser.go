@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"book-reader/backend/internal/model"
 )
@@ -443,17 +444,19 @@ func parseTXT(filePath, title string, bookID int64) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	contentStart := int64(0)
 	if bytes.HasPrefix(data, []byte{0xEF, 0xBB, 0xBF}) {
-		data = data[3:]
+		contentStart = 3
 	}
-	lines := bytes.SplitAfter(data, []byte{'\n'})
+	content := data[contentStart:]
+	lines := bytes.SplitAfter(content, []byte{'\n'})
 	type hit struct {
 		title     string
 		lineStart int64
 		bodyStart int64
 	}
 	var hits []hit
-	var offset int64
+	offset := contentStart
 	for _, line := range lines {
 		text := strings.TrimSpace(string(bytes.TrimRight(line, "\r\n")))
 		if isChapterTitle(text) {
@@ -463,15 +466,15 @@ func parseTXT(filePath, title string, bookID int64) (*Result, error) {
 	}
 	var chapters []model.BookChapter
 	if len(hits) == 0 {
-		start, end := int64(0), int64(len(data))
-		wc := int64(len([]rune(string(data))))
+		start, end := contentStart, int64(len(data))
+		wc := int64(len([]rune(string(content))))
 		chapters = append(chapters, model.BookChapter{
 			BookID: bookID, ChapterIndex: 0, Title: "正文", Locator: "txt_0",
 			StartOffset: &start, EndOffset: &end, WordCount: &wc,
 		})
 	} else {
-		if hits[0].lineStart > 0 {
-			start, end := int64(0), hits[0].lineStart
+		if hits[0].lineStart > contentStart {
+			start, end := contentStart, hits[0].lineStart
 			wc := wordCount(data[start:end])
 			chapters = append(chapters, model.BookChapter{
 				BookID: bookID, ChapterIndex: 0, Title: "前言", Locator: "txt_0",
@@ -516,17 +519,172 @@ func ReadTXTContent(filePath string, chapter model.BookChapter) (string, error) 
 	if chapter.StartOffset == nil || chapter.EndOffset == nil || *chapter.EndOffset < *chapter.StartOffset {
 		return "", nil
 	}
-	f, err := os.Open(filePath)
+	buf, err := readTXTBytes(filePath, *chapter.StartOffset, *chapter.EndOffset)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-	size := *chapter.EndOffset - *chapter.StartOffset
-	buf := make([]byte, size)
-	if _, err := f.ReadAt(buf, *chapter.StartOffset); err != nil && size > 0 {
-		return "", err
+	return normalizeTXTContent(string(buf)), nil
+}
+
+func readTXTBytes(filePath string, start, end int64) ([]byte, error) {
+	if end < start {
+		return nil, nil
 	}
-	return strings.TrimLeft(string(buf), " \r\n\t　"), nil
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	fileSize := info.Size()
+	if start > fileSize {
+		return nil, nil
+	}
+	if end > fileSize {
+		end = fileSize
+	}
+	hasBOM := fileHasUTF8BOM(filePath)
+	if hasBOM {
+		if start == 0 {
+			adjustedEnd := end + 3
+			if adjustedEnd > fileSize {
+				adjustedEnd = fileSize
+			}
+			buf, err := readFileRange(filePath, start, adjustedEnd)
+			if err != nil {
+				return nil, err
+			}
+			if bytes.HasPrefix(buf, []byte{0xEF, 0xBB, 0xBF}) {
+				return buf[3:], nil
+			}
+			return buf, nil
+		}
+		if shifted, ok := readShiftedLegacyBOMRange(filePath, start, end, fileSize, 3); ok {
+			return shifted, nil
+		}
+	}
+	buf, err := readFileRange(filePath, start, end)
+	if err != nil {
+		return nil, err
+	}
+	if hasBOM && start > 0 && len(buf) > 0 && !utf8.Valid(buf) {
+		for delta := int64(1); delta <= 3; delta++ {
+			if start+delta > fileSize {
+				break
+			}
+			adjustedEnd := end + delta
+			if adjustedEnd > fileSize {
+				adjustedEnd = fileSize
+			}
+			adjusted, err := readFileRange(filePath, start+delta, adjustedEnd)
+			if err == nil && utf8.Valid(adjusted) {
+				return adjusted, nil
+			}
+		}
+	}
+	return buf, nil
+}
+
+func readShiftedLegacyBOMRange(filePath string, start, end, fileSize, delta int64) ([]byte, bool) {
+	shiftedStart := start + delta
+	shiftedEnd := end + delta
+	if shiftedStart > fileSize {
+		return nil, false
+	}
+	if shiftedEnd > fileSize {
+		shiftedEnd = fileSize
+	}
+	shifted, err := readFileRange(filePath, shiftedStart, shiftedEnd)
+	if err != nil || !utf8.Valid(shifted) {
+		return nil, false
+	}
+	original, err := readFileRange(filePath, start, end)
+	if err == nil && utf8.Valid(original) && !looksLikeLegacyBOMChapterStart(filePath, shiftedStart) {
+		return original, false
+	}
+	return shifted, true
+}
+
+func looksLikeLegacyBOMChapterStart(filePath string, shiftedStart int64) bool {
+	if shiftedStart <= 0 {
+		return false
+	}
+	windowStart := shiftedStart - 512
+	if windowStart < 0 {
+		windowStart = 0
+	}
+	buf, err := readFileRange(filePath, windowStart, shiftedStart)
+	if err != nil || len(buf) == 0 {
+		return false
+	}
+	buf = bytes.TrimRight(buf, "\r\n")
+	if len(buf) == 0 {
+		return false
+	}
+	if i := bytes.LastIndexByte(buf, '\n'); i >= 0 {
+		buf = buf[i+1:]
+	}
+	return isChapterTitle(strings.TrimSpace(string(buf)))
+}
+
+func readFileRange(filePath string, start, end int64) ([]byte, error) {
+	size := end - start
+	if size <= 0 {
+		return nil, nil
+	}
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	buf := make([]byte, size)
+	if _, err := f.ReadAt(buf, start); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func fileHasUTF8BOM(filePath string) bool {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var bom [3]byte
+	n, err := f.Read(bom[:])
+	return err == nil && n == 3 && bytes.Equal(bom[:], []byte{0xEF, 0xBB, 0xBF})
+}
+
+func normalizeTXTContent(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	if s == "" {
+		return ""
+	}
+	i := 0
+	for i < len(s) {
+		lineStart := i
+		for i < len(s) {
+			r, size := utf8.DecodeRuneInString(s[i:])
+			if r != ' ' && r != '\t' && r != '　' {
+				break
+			}
+			i += size
+		}
+		if i < len(s) {
+			r, size := utf8.DecodeRuneInString(s[i:])
+			if r == '\n' {
+				i += size
+				continue
+			}
+		}
+		if lineStart == 0 {
+			return s
+		}
+		if i > lineStart {
+			return s[lineStart:]
+		}
+		return "　　" + s[i:]
+	}
+	return ""
 }
 
 func PDFChapterHTML(chapter model.BookChapter) string {

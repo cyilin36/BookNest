@@ -12,7 +12,8 @@ import (
 
 func TestParseTXTChapters(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "book.txt")
-	if err := os.WriteFile(file, []byte("第一章 开始\n正文一\n\n第二章 继续\n正文二\n"), 0o644); err != nil {
+	body := "\xEF\xBB\xBF第一章 开始\n    正文一\n\n第二段正文\n第二章 继续\n正文二\n"
+	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	result, err := Parse(file, model.BookFormatTXT, "book.txt", 1)
@@ -22,12 +23,77 @@ func TestParseTXTChapters(t *testing.T) {
 	if len(result.Chapters) != 2 {
 		t.Fatalf("expected 2 chapters, got %d", len(result.Chapters))
 	}
+	wantStart := int64(len([]byte("\xEF\xBB\xBF第一章 开始\n")))
+	if result.Chapters[0].StartOffset == nil || *result.Chapters[0].StartOffset != wantStart {
+		t.Fatalf("unexpected first chapter start offset: %#v, want %d", result.Chapters[0].StartOffset, wantStart)
+	}
 	content, err := ReadTXTContent(file, result.Chapters[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(content, "正文一") {
 		t.Fatalf("unexpected content: %q", content)
+	}
+	if !strings.HasPrefix(content, "    正文一") {
+		t.Fatalf("txt content did not preserve existing leading indent: %q", content)
+	}
+	if strings.Contains(content, "\uFFFD") {
+		t.Fatalf("content contains replacement character: %q", content)
+	}
+}
+
+func TestReadTXTContentLegacyBOMOffsets(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "legacy-bom.txt")
+	body := "\xEF\xBB\xBF第一章 开始\n正文一\n第二段正文"
+	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	start, end := int64(0), int64(len([]byte(body))-3)
+	chapter := model.BookChapter{StartOffset: &start, EndOffset: &end}
+	content, err := ReadTXTContent(file, chapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(content, "\uFEFF") || strings.Contains(content, "\uFFFD") {
+		t.Fatalf("legacy BOM offsets were not corrected: %q", content)
+	}
+	if !strings.Contains(content, "第二段正文") {
+		t.Fatalf("legacy BOM offsets truncated content: %q", content)
+	}
+
+	titleBytes := len([]byte("第一章 开始\n"))
+	legacyStart := int64(titleBytes)
+	legacyEnd := int64(len([]byte(body)) - 3)
+	chapter = model.BookChapter{StartOffset: &legacyStart, EndOffset: &legacyEnd}
+	content, err = ReadTXTContent(file, chapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasPrefix(content, "始") || strings.Contains(content, "\uFFFD") {
+		t.Fatalf("legacy chapter boundary was not corrected: %q", content)
+	}
+	if !strings.HasPrefix(content, "正文一") || !strings.Contains(content, "第二段正文") {
+		t.Fatalf("legacy chapter content was not preserved: %q", content)
+	}
+}
+
+func TestNormalizeTXTContentLeadingWhitespace(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "preserve existing half width indent", in: "\n    正文", want: "    正文"},
+		{name: "preserve existing full width indent", in: "\r\n　　正文", want: "　　正文"},
+		{name: "add indent after blank lines when missing", in: "\n\n正文", want: "　　正文"},
+		{name: "leave already started text unchanged", in: "正文", want: "正文"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeTXTContent(tt.in); got != tt.want {
+				t.Fatalf("normalizeTXTContent(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 

@@ -604,19 +604,31 @@ frontend/src/views/reader/ReaderView.vue
 - 加载 progress
 - 加载章节正文
 - 目录抽屉
+- 打开目录时自动定位到当前阅读章节
+- 目录中当前阅读章节使用颜色和边框高亮提示
 - 上一章/下一章
 - 切换章节后自动回到章节顶部
+- 进入阅读器时按已保存阅读进度恢复章节和滚动位置
 - 正文区域点击交互：左侧切上一章，中间呼出阅读菜单，右侧切下一章
 - 主题切换
 - 字号调整
 - 行高调整
 - 节流保存阅读进度
 
+进度策略：
+
+- 前端继续使用 `GET/PUT /api/v1/reader/books/:bookId/progress`。
+- `progress_value` 兼容历史纯章节 ID 字符串；旧值只能恢复到章节顶部。
+- 新保存的 `progress_value` 是 JSON 字符串：`{"chapterId":number,"scrollRatio":number}`。
+- `chapterId` 用于恢复章节，`scrollRatio` 用于恢复页面滚动比例。
+- `percentage` 根据章节序号和当前章节内滚动比例估算，用于书架进度条展示。
+
 当前渲染策略：
 
 - TXT/EPUB/PDF 均优先消费后端章节接口。
-- 正文通过 `v-html` 展示 HTML 内容。
-- TXT 内容由后端返回文本内容。
+- 章节正文按后端返回的 `content_type` 分支渲染。
+- `content_type='html'` 使用 `v-html` 展示 HTML 内容。
+- `content_type='text'` 使用 `v-text` 纯文本展示，并通过 `white-space: pre-wrap` 保留 TXT 换行和段落空白。
 - PDF 当前依赖后端生成的章节 HTML，不是完整 pdf.js 页面渲染。
 
 ### 管理后台
@@ -667,6 +679,7 @@ frontend/src/assets/styles/reader.css
 - 工具型页面保持紧凑、清晰、低装饰。
 - 阅读器正文优先，减少视觉干扰。
 - 书架和公共馆使用书卡展示。
+- 书卡主操作按钮使用实心高对比样式，保证“阅读”和“加入书架”等主要动作足够醒目。
 - 公共馆需要明确表达“加入书架只建立引用，不复制物理文件”。
 - 移动端使用顶部栏和抽屉交互。
 

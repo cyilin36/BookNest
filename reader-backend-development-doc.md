@@ -1334,11 +1334,16 @@ PUT /api/v1/reader/books/:bookId/progress
     "id": 1,
     "chapter_index": 0,
     "title": "第一章",
-    "content_type": "html",
+    "content_type": "text",
     "content": "..."
   }
 }
 ```
+
+规则：
+
+- TXT 返回 `content_type='text'`，正文保留换行；章节正文开头多余空行会被归一，原文首段已有缩进时保留原缩进，首段无缩进时后端可按阅读排版补全角缩进 `　　`，由前端按纯文本排版。
+- EPUB、PDF 返回 `content_type='html'`。
 
 TXT 分块接口：
 

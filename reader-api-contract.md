@@ -227,6 +227,12 @@ export interface ReadingProgress {
 }
 ```
 
+前端章节阅读器使用现有 `progress_value` 字符串保存恢复位置：
+
+- 兼容旧值：纯数字字符串按章节 ID 解释，只恢复到该章节顶部。
+- 新值：JSON 字符串，格式为 `{"chapterId":123,"scrollRatio":0.42}`，其中 `chapterId` 是章节 ID，`scrollRatio` 是当前页面滚动比例，范围 0 到 1。
+- 后端只需按字符串持久化 `progress_value`，不解析该 JSON。
+
 ## 5. 通用查询参数
 
 分页接口统一支持：
@@ -663,6 +669,7 @@ GET /api/v1/reader/books/:bookId/chapters/:chapterId/content
 规则：
 
 - TXT 返回 `content_type='text'`。
+- TXT 正文保留换行；章节正文开头多余空行会被归一，原文首段已有缩进时保留原缩进，首段无缩进时后端可按阅读排版补全角缩进 `　　`。
 - EPUB 返回后端净化后的 `html`。
 - EPUB 章节 HTML 内图片地址应改写为 `/api/v1/reader/books/:bookId/resources?href=...`。
 - EPUB 中的 SVG `<image href="...">`、`<image xlink:href="...">` 应由后端归一成普通 `<img src="...">`，便于前端直接渲染。
@@ -733,6 +740,7 @@ interface SaveReadingProgressRequest {
 - EPUB 只允许 `epub_cfi`。
 - PDF 只允许 `pdf_page`。
 - TXT 只允许 `txt_offset`。
+- `progress_value` 按字符串保存；章节阅读器当前写入 `{"chapterId":number,"scrollRatio":number}`，并兼容历史纯章节 ID 字符串。
 - `percentage` 可空，非空范围 0 到 100。
 - 保存成功后更新当前用户对应书架项的 `last_read_at`。
 
