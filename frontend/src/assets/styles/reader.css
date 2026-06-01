@@ -1,0 +1,21 @@
+.reader-shell {
+  min-height: 100vh;
+  background: var(--color-bg-page);
+  color: var(--color-text-main);
+}
+
+.reader-content {
+  font-family: var(--font-reader);
+  font-size: var(--reader-font-size, 18px);
+  line-height: var(--reader-line-height, 1.8);
+  text-align: justify;
+}
+
+.reader-content p {
+  margin: 0 0 1.1em;
+}
+
+.reader-content img {
+  max-width: 100%;
+  height: auto;
+}

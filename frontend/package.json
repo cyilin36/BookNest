@@ -1,0 +1,27 @@
+{
+  "name": "book-reader-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^5.1.4",
+    "@vueuse/core": "^11.1.0",
+    "axios": "^1.7.7",
+    "epubjs": "^0.3.93",
+    "lucide-vue-next": "^0.468.0",
+    "naive-ui": "^2.40.3",
+    "pdfjs-dist": "^4.9.155",
+    "pinia": "^2.2.4",
+    "typescript": "~5.5.4",
+    "vite": "^5.4.8",
+    "vue": "^3.5.12",
+    "vue-router": "^4.4.5",
+    "vue-tsc": "^2.1.6"
+  },
+  "devDependencies": {}
+}

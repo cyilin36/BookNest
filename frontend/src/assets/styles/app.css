@@ -1,0 +1,86 @@
+@import './variables.css';
+@import './reader.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  color: var(--color-text-main);
+  background: var(--color-bg-page);
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.page-subtitle {
+  margin: 6px 0 0;
+  color: var(--color-text-sec);
+}
+
+.surface {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.grid-books {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.muted {
+  color: var(--color-text-sec);
+}
+
+.danger-text {
+  color: #d03050;
+}
+
+@media (max-width: 720px) {
+  .page-title {
+    font-size: 24px;
+  }
+
+  .page-header {
+    flex-direction: column;
+  }
+}

@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: book-reader-test-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: book_reader
+      POSTGRES_USER: book_reader
+      POSTGRES_PASSWORD: book_reader_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "15432:5432"
+    volumes:
+      - ./data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U book_reader -d book_reader"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

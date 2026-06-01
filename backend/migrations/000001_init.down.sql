@@ -1,0 +1,14 @@
+DROP TABLE IF EXISTS system_settings;
+DROP TABLE IF EXISTS bookmarks;
+DROP TABLE IF EXISTS reading_progress;
+DROP TABLE IF EXISTS book_chapters;
+DROP TABLE IF EXISTS bookshelf_tags;
+DROP TABLE IF EXISTS book_tags;
+DROP TABLE IF EXISTS book_categories;
+DROP TABLE IF EXISTS bookshelves;
+DROP TABLE IF EXISTS books;
+DROP TABLE IF EXISTS tags;
+DROP TABLE IF EXISTS categories;
+DROP TABLE IF EXISTS refresh_tokens;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS schema_migrations;

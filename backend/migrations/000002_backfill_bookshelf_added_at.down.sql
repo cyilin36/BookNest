@@ -1,0 +1,1 @@
+-- no-op: do not restore invalid zero timestamps

@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>多端自适应阅读器前端风格演示 - Book Reader</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts for better typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            serif: ['Noto Serif SC', 'Georgia', 'Playfair Display', 'serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* CSS Variables for Dynamic Styling */
+    :root {
+      --color-primary: #18a058;
+      --color-primary-hover: #36ad6a;
+      --color-primary-suppl: #18a0581a;
+      --color-bg-page: #f3f4f6;
+      --color-bg-card: #ffffff;
+      --color-bg-sidebar: #ffffff;
+      --color-border: #e5e7eb;
+      --color-text-main: #1f2937;
+      --color-text-sec: #6b7280;
+      --font-reader: 'Inter', sans-serif;
+    }
+
+    .theme-modern {
+      --color-primary: #18a058; /* Naive UI Green */
+      --color-primary-hover: #36ad6a;
+      --color-primary-suppl: rgba(24, 160, 88, 0.1);
+      --color-bg-page: #f3f4f6;
+      --color-bg-card: #ffffff;
+      --color-bg-sidebar: #ffffff;
+      --color-border: #e5e7eb;
+      --color-text-main: #1f2937;
+      --color-text-sec: #6b7280;
+      --font-reader: 'Inter', sans-serif;
+    }
+
+    .theme-sepia {
+      --color-primary: #8b5a2b; /* Warm brown */
+      --color-primary-hover: #a06d3b;
+      --color-primary-suppl: rgba(139, 90, 43, 0.1);
+      --color-bg-page: #f4edd8; /* Warm paper */
+      --color-bg-card: #fcf8ec;
+      --color-bg-sidebar: #efe5cb;
+      --color-border: #e3d5b5;
+      --color-text-main: #2c2214;
+      --color-text-sec: #6d583e;
+      --font-reader: 'Noto Serif SC', serif;
+    }
+
+    .theme-dark {
+      --color-primary: #10b981; /* Emerald/Teal */
+      --color-primary-hover: #34d399;
+      --color-primary-suppl: rgba(16, 185, 129, 0.15);
+      --color-bg-page: #09090b; /* OLED black */
+      --color-bg-card: #18181b;
+      --color-bg-sidebar: #111113;
+      --color-border: #27272a;
+      --color-text-main: #f4f4f5;
+      --color-text-sec: #a1a1aa;
+      --font-reader: 'Noto Serif SC', serif;
+    }
+
+    body {
+      background-color: var(--color-bg-page);
+      color: var(--color-text-main);
+      transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+    }
+
+    .custom-card {
+      background-color: var(--color-bg-card);
+      border-color: var(--color-border);
+    }
+    .custom-sidebar {
+      background-color: var(--color-bg-sidebar);
+      border-color: var(--color-border);
+    }
+    .custom-border {
+      border-color: var(--color-border);
+    }
+    .text-main {
+      color: var(--color-text-main);
+    }
+    .text-sec {
+      color: var(--color-text-sec);
+    }
+    .bg-primary-custom {
+      background-color: var(--color-primary);
+    }
+    .bg-primary-custom:hover {
+      background-color: var(--color-primary-hover);
+    }
+    .text-primary-custom {
+      color: var(--color-primary);
+    }
+    .bg-primary-suppl {
+      background-color: var(--color-primary-suppl);
+    }
+
+    /* Highlight class for active views */
+    .nav-active {
+      color: var(--color-primary);
+      background-color: var(--color-primary-suppl);
+    }
+    @media (min-width: 1024px) {
+      .nav-active {
+        border-right: 3px solid var(--color-primary);
+        border-radius: 8px 0 0 8px;
+      }
+    }
+  </style>
+</head>
+<body class="theme-modern flex flex-col lg:flex-row h-screen overflow-hidden font-sans">
+
+  <!-- Mobile Top Navbar (Visible only on Mobile & Tablet) -->
+  <header class="lg:hidden h-14 shrink-0 flex items-center justify-between px-4 border-b custom-border bg-white dark:bg-zinc-900 z-30 custom-sidebar">
+    <div class="flex items-center">
+      <svg class="w-6 h-6 text-primary-custom mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+      </svg>
+      <span class="font-bold text-base text-main">Book Reader</span>
+    </div>
+    
+    <!-- Mobile Hamburger and theme button -->
+    <div class="flex items-center space-x-2">
+      <!-- Fast theme switcher for mobile -->
+      <button onclick="toggleMobileTheme()" class="p-1.5 rounded-lg border custom-border text-main hover:bg-gray-100 dark:hover:bg-zinc-800" title="切换风格">
+        🎨
+      </button>
+      <button onclick="toggleMobileMenu()" class="p-2 rounded-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Navigation Menu Overlay for Mobile (Responsive Sidenav drawer) -->
+  <div id="mobile-menu" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden transition-opacity" onclick="toggleMobileMenu()">
+    <div class="w-64 h-full custom-sidebar border-r custom-border flex flex-col justify-between p-4" onclick="event.stopPropagation()">
+      <div class="space-y-6">
+        <div class="flex items-center justify-between border-b custom-border pb-3">
+          <span class="font-bold text-main">导航菜单</span>
+          <button onclick="toggleMobileMenu()" class="text-xl text-sec hover:text-main">&times;</button>
+        </div>
+        <nav class="space-y-1">
+          <button onclick="switchView('bookshelf'); toggleMobileMenu()" class="w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition nav-active" id="m-nav-bookshelf">
+            我的书架
+          </button>
+          <button onclick="switchView('library'); toggleMobileMenu()" class="w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition" id="m-nav-library">
+            公共图书馆
+          </button>
+          <button onclick="switchView('upload'); toggleMobileMenu()" class="w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition" id="m-nav-upload">
+            书籍上传
+          </button>
+          <button onclick="switchView('reader'); toggleMobileMenu()" class="w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition" id="m-nav-reader">
+            阅读空间
+          </button>
+          <button onclick="switchView('admin'); toggleMobileMenu()" class="w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition" id="m-nav-admin">
+            管理控制台
+          </button>
+        </nav>
+      </div>
+      <!-- User / Quota info in mobile side drawer -->
+      <div class="border-t custom-border pt-4">
+        <div class="text-xs font-semibold text-main mb-1">配额: 254.2 MB / 1.0 GB</div>
+        <div class="w-full bg-gray-200 dark:bg-zinc-800 rounded-full h-1">
+          <div class="bg-primary-custom h-1 rounded-full" style="width: 25.4%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Left Sidenav (AppLayout.vue Bone Structure - Desktop only) -->
+  <aside id="desktop-sidebar" class="hidden lg:flex w-64 border-r flex-col justify-between custom-sidebar custom-border select-none z-10 shrink-0">
+    <div>
+      <div class="h-16 flex items-center px-6 border-b custom-border">
+        <svg class="w-8 h-8 text-primary-custom mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+        </svg>
+        <span class="font-bold text-lg tracking-wide text-main">Book Reader</span>
+      </div>
+
+      <nav class="mt-4 pl-3 space-y-1">
+        <button onclick="switchView('bookshelf')" id="nav-bookshelf" class="w-full flex items-center px-4 py-3 text-sm font-medium rounded-l-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition nav-active">
+          我的书架
+        </button>
+        <button onclick="switchView('library')" id="nav-library" class="w-full flex items-center px-4 py-3 text-sm font-medium rounded-l-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition">
+          公共图书馆
+        </button>
+        <button onclick="switchView('upload')" id="nav-upload" class="w-full flex items-center px-4 py-3 text-sm font-medium rounded-l-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition">
+          书籍上传
+        </button>
+        <button onclick="switchView('reader')" id="nav-reader" class="w-full flex items-center px-4 py-3 text-sm font-medium rounded-l-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition">
+          阅读空间
+        </button>
+        <div class="h-[1px] my-3 custom-border border-t mr-3"></div>
+        <button onclick="switchView('admin')" id="nav-admin" class="w-full flex items-center px-4 py-3 text-sm font-medium rounded-l-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition">
+          管理控制台
+        </button>
+      </nav>
+    </div>
+
+    <!-- Storage Quota Bar -->
+    <div class="p-4 border-t custom-border">
+      <div class="text-[11px] mb-1 flex justify-between font-medium text-sec">
+        <span>存储空间</span>
+        <span>25.4%</span>
+      </div>
+      <div class="w-full bg-gray-200 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+        <div class="bg-primary-custom h-1.5 rounded-full" style="width: 25.4%"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 flex flex-col h-full overflow-hidden relative">
+
+    <!-- Top Action Header -->
+    <header class="h-14 lg:h-16 border-b custom-border flex items-center justify-between px-4 lg:px-8 bg-white dark:bg-zinc-900 shrink-0 z-10 custom-sidebar">
+      <div class="flex items-center space-x-2">
+        <h2 id="view-title" class="text-base lg:text-xl font-bold text-main">我的书架</h2>
+        <span class="text-[10px] lg:text-xs text-sec font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800" id="view-subtitle">共 4 本书</span>
+      </div>
+
+      <!-- Theme buttons (desktop only) -->
+      <div class="hidden lg:flex items-center space-x-2 text-xs">
+        <button onclick="setTheme('modern')" id="theme-btn-modern" class="px-3 py-1.5 font-semibold rounded-lg border transition bg-white text-slate-800 border-slate-300 ring-2 ring-emerald-500 ring-offset-2 dark:ring-offset-black">简约现代</button>
+        <button onclick="setTheme('sepia')" id="theme-btn-sepia" class="px-3 py-1.5 font-semibold rounded-lg border transition bg-[#fcf8ec] text-[#2c2214] border-[#e3d5b5]">温馨羊皮纸</button>
+        <button onclick="setTheme('dark')" id="theme-btn-dark" class="px-3 py-1.5 font-semibold rounded-lg border transition bg-zinc-900 text-zinc-100 border-zinc-700">深邃黑夜</button>
+      </div>
+    </header>
+
+    <!-- CONTENT VIEWS CONTAINER -->
+    <div class="flex-1 overflow-y-auto p-4 lg:p-8" id="main-scroll-container">
+
+      <!-- View 1: Bookshelf (Mobile Optimised Shelf) -->
+      <div id="view-panel-bookshelf" class="space-y-4 lg:space-y-6">
+        <!-- Filter bar -->
+        <div class="custom-card border p-3 lg:p-4 rounded-xl flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between shadow-sm">
+          <input type="text" placeholder="搜索书架图书..." class="px-3 py-1.5 text-sm rounded-lg border custom-border bg-white dark:bg-zinc-800 text-main focus:outline-none focus:ring-1 focus:ring-emerald-500">
+          <div class="flex gap-2">
+            <select class="flex-1 px-3 py-1.5 text-xs rounded-lg border custom-border bg-white dark:bg-zinc-800 text-main focus:outline-none">
+              <option>全部格式</option>
+              <option>EPUB</option>
+              <option>PDF</option>
+              <option>TXT</option>
+            </select>
+            <select class="flex-1 px-3 py-1.5 text-xs rounded-lg border custom-border bg-white dark:bg-zinc-800 text-main focus:outline-none">
+              <option>默认排序</option>
+              <option>最近阅读优先</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Books Shelf Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-6">
+          
+          <!-- Book 1 -->
+          <div onclick="openBookInReader('txt', '红楼梦', '曹雪芹')" class="custom-card border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer flex flex-col justify-between">
+            <div class="p-4 flex">
+              <div class="w-16 h-24 lg:w-20 lg:h-28 bg-amber-100 dark:bg-amber-900/30 rounded-lg shrink-0 flex flex-col justify-between p-1.5 shadow border border-amber-200/50">
+                <span class="text-[9px] font-bold text-amber-700 bg-amber-200/50 px-1 py-0.5 rounded self-start">TXT</span>
+                <span class="text-xs font-serif font-bold text-amber-900 dark:text-amber-100 text-center line-clamp-2 leading-tight">红楼梦</span>
+                <span class="text-[8px] text-amber-700 text-center truncate">曹雪芹</span>
+              </div>
+              <div class="ml-3 lg:ml-4 flex-1 overflow-hidden flex flex-col justify-between">
+                <div>
+                  <span class="text-[9px] px-1.5 py-0.5 font-bold rounded bg-blue-100 text-blue-700">私有上传</span>
+                  <h3 class="font-bold text-sm text-main truncate mt-1">红楼梦 (完整古本)</h3>
+                  <p class="text-xs text-sec truncate">曹雪芹 · 著</p>
+                </div>
+                <div>
+                  <div class="text-[10px] text-sec mb-0.5">已读 42.5%</div>
+                  <div class="w-full bg-gray-100 dark:bg-zinc-800 rounded-full h-1">
+                    <div class="bg-primary-custom h-1 rounded-full" style="width: 42.5%"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="px-4 py-2 bg-gray-50 dark:bg-zinc-900/50 border-t custom-border flex justify-between items-center text-xs text-sec">
+              <span>5.4 MB</span>
+              <span>点击阅读</span>
+            </div>
+          </div>
+
+          <!-- Book 2 -->
+          <div onclick="openBookInReader('epub', '月亮与六便士', '毛姆')" class="custom-card border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer flex flex-col justify-between">
+            <div class="p-4 flex">
+              <div class="w-16 h-24 lg:w-20 lg:h-28 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg shrink-0 flex flex-col justify-between p-1.5 shadow border border-emerald-200/50">
+                <span class="text-[9px] font-bold text-emerald-700 bg-emerald-200/50 px-1 py-0.5 rounded self-start">EPUB</span>
+                <span class="text-xs font-serif font-bold text-emerald-900 dark:text-emerald-100 text-center line-clamp-2 leading-tight">月亮与六便士</span>
+                <span class="text-[8px] text-emerald-700 text-center truncate">毛姆</span>
+              </div>
+              <div class="ml-3 lg:ml-4 flex-1 overflow-hidden flex flex-col justify-between">
+                <div>
+                  <span class="text-[9px] px-1.5 py-0.5 font-bold rounded bg-purple-100 text-purple-700">引自公共馆</span>
+                  <h3 class="font-bold text-sm text-main truncate mt-1">月亮与六便士</h3>
+                  <p class="text-xs text-sec truncate">威廉·萨默塞特·毛姆</p>
+                </div>
+                <div>
+                  <div class="text-[10px] text-sec mb-0.5">已读 12.0%</div>
+                  <div class="w-full bg-gray-100 dark:bg-zinc-800 rounded-full h-1">
+                    <div class="bg-primary-custom h-1 rounded-full" style="width: 12.0%"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="px-4 py-2 bg-gray-50 dark:bg-zinc-900/50 border-t custom-border flex justify-between items-center text-xs text-sec">
+              <span>12.1 MB</span>
+              <span>点击阅读</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- View 2: Public Library (Mobile Responsive Info Layout) -->
+      <div id="view-panel-library" class="space-y-4 lg:space-y-6 hidden">
+        <!-- Explanatory Banner -->
+        <div class="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/30 p-3 lg:p-4 rounded-xl flex items-start space-x-2">
+          <span class="text-emerald-600 font-bold text-sm">💡</span>
+          <div>
+            <h4 class="font-bold text-xs lg:text-sm text-emerald-800 dark:text-emerald-400">零磁盘复制，急速引用</h4>
+            <p class="text-[11px] lg:text-xs text-emerald-700 dark:text-emerald-500 mt-1">
+              加入书架操作仅保存一条关联记录，无任何存储开销，全站极速共享。
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Book to Add -->
+          <div class="custom-card border rounded-xl overflow-hidden shadow-sm p-4 flex justify-between items-center" id="mob-lib-book-1">
+            <div class="flex items-center space-x-3 overflow-hidden">
+              <div class="w-12 h-16 bg-rose-100 dark:bg-rose-900/30 rounded shrink-0 flex flex-col justify-between p-1 border border-rose-200/50">
+                <span class="text-[8px] font-bold text-rose-700 bg-rose-200/50 rounded self-start px-1">PDF</span>
+                <span class="text-[9px] font-bold text-rose-900 truncate">失控</span>
+              </div>
+              <div class="overflow-hidden">
+                <h4 class="text-sm font-bold text-main truncate">失控: 全人类的最终命运</h4>
+                <p class="text-xs text-sec truncate">凯文·凯利</p>
+              </div>
+            </div>
+            <button onclick="addToBookshelf('mob-lib-book-1', '已成功添加至书架！')" class="px-3 py-1.5 bg-primary-custom text-white hover:bg-primary-hover rounded-lg text-xs font-bold shrink-0 transition">
+              加入
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- View 3: Book Upload (Fully adaptive layout with single flow) -->
+      <div id="view-panel-upload" class="max-w-xl mx-auto space-y-4 hidden">
+        <div class="custom-card border p-4 lg:p-6 rounded-xl shadow-sm space-y-4">
+          <h3 class="text-base lg:text-lg font-bold text-main border-b custom-border pb-2">自适应书籍上传</h3>
+          
+          <div>
+            <label class="block text-xs lg:text-sm font-semibold text-main mb-1.5">上传目标</label>
+            <div class="flex flex-col gap-2">
+              <label class="border custom-border rounded-lg p-2.5 flex items-center cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
+                <input type="radio" checked name="m-upload-t" class="mr-2">
+                <span class="text-xs font-bold text-main">个人私有书架</span>
+              </label>
+              <label class="border custom-border rounded-lg p-2.5 flex items-center cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
+                <input type="radio" name="m-upload-t" class="mr-2">
+                <span class="text-xs font-bold text-main">共享公共馆</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Drag drop field adapted to finger-touch targets -->
+          <div class="border-2 border-dashed border-gray-300 dark:border-zinc-700 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:border-emerald-500 transition">
+            <span class="text-xs font-bold text-main">点击此块选择本地图书</span>
+            <span class="text-[10px] text-sec mt-1">支持 EPUB, PDF, TXT (限制 100MB)</span>
+          </div>
+
+          <button onclick="showNotification('图书上传成功，解析任务已开启')" class="w-full py-2 bg-primary-custom text-white hover:bg-primary-hover font-bold text-xs rounded-lg transition">
+            开始解析并上传
+          </button>
+        </div>
+      </div>
+
+      <!-- View 4: Mobile Responsive Reader Layout (Splits directory & Settings as mobile bottom drawers) -->
+      <div id="view-panel-reader" class="hidden absolute inset-0 flex h-full overflow-hidden custom-sidebar z-0">
+        
+        <!-- Desktop TOC Side bar (Hidden on mobile by default) -->
+        <aside id="reader-desktop-toc" class="hidden md:flex w-64 border-r custom-border h-full flex-col justify-between shrink-0 custom-sidebar">
+          <div class="h-12 border-b custom-border flex items-center px-4 justify-between bg-gray-50 dark:bg-zinc-900/40">
+            <span class="text-xs font-bold uppercase text-sec">目录 (Legado 解析)</span>
+          </div>
+          <div class="flex-1 overflow-y-auto p-2 space-y-1 text-sm">
+            <button onclick="switchChapter(1)" id="ch-1" class="w-full text-left px-3 py-2 rounded-lg font-medium text-primary-custom bg-primary-suppl truncate">第一章 甄士隐梦幻识通灵</button>
+            <button onclick="switchChapter(2)" id="ch-2" class="w-full text-left px-3 py-2 rounded-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 truncate">第二章 贾夫人仙逝扬州城</button>
+          </div>
+          <div class="p-3 border-t custom-border text-xs text-sec bg-gray-50 dark:bg-zinc-900/30">
+            作者：曹雪芹
+          </div>
+        </aside>
+
+        <!-- Reader Display Viewport -->
+        <div class="flex-1 flex flex-col h-full bg-white dark:bg-zinc-950 transition overflow-hidden">
+          
+          <!-- Reader Top Action Panel -->
+          <div class="h-12 border-b custom-border px-4 flex items-center justify-between bg-white dark:bg-zinc-900 shrink-0 z-20 custom-sidebar">
+            <button onclick="toggleMobileToc()" class="px-2.5 py-1 rounded border custom-border hover:bg-gray-50 dark:hover:bg-zinc-800 text-xs font-bold text-main">
+              📖 目录
+            </button>
+            
+            <div class="flex items-center space-x-2">
+              <button onclick="adjustFontSize(-1)" class="w-7 h-7 flex items-center justify-center rounded border custom-border bg-gray-50 dark:bg-zinc-800 font-bold text-main text-xs">-</button>
+              <span id="font-size-val" class="text-xs font-bold text-main min-w-[32px] text-center">16px</span>
+              <button onclick="adjustFontSize(1)" class="w-7 h-7 flex items-center justify-center rounded border custom-border bg-gray-50 dark:bg-zinc-800 font-bold text-main text-xs">+</button>
+            </div>
+
+            <button onclick="toggleMobileSettings()" class="px-2.5 py-1 rounded border custom-border hover:bg-gray-50 dark:hover:bg-zinc-800 text-xs font-bold text-main">
+              ⚙️ 排版
+            </button>
+          </div>
+
+          <!-- Reader Typography Content (Fingertip-friendly margins for tablets & phones) -->
+          <div class="flex-1 overflow-y-auto px-4 sm:px-12 md:px-20 py-6" id="reading-viewport" style="font-family: 'Noto Serif SC', serif;">
+            <div class="max-w-xl mx-auto space-y-4" id="reader-book-body">
+              <h1 id="viewport-chapter-title" class="text-lg sm:text-xl font-bold tracking-tight mb-4 pb-2 border-b custom-border text-main font-serif">第一回 甄士隐梦幻识通灵</h1>
+              
+              <div id="viewport-chapter-text" class="text-[16px] leading-[1.7] text-main font-serif space-y-4 text-justify">
+                <p>此开卷第一回也。作者自云：因曾历过一番梦幻之后，故将真事隐去，而撰此《石头记》一书也，故曰“甄士隐”梦幻识通灵。</p>
+                <p>列位看官：你道此书从何而来？说起根由，虽近荒唐，细玩深有滋味。且听作者敷演。诗云：</p>
+                <div class="my-4 py-2 px-4 border-l-4 border-emerald-500 bg-gray-50 dark:bg-zinc-900 rounded-r text-sm font-medium italic text-sec">
+                  无材可去补苍天，枉入红尘若许年。<br>
+                  此系身前身后事，倩谁记去作奇传？
+                </div>
+                <p>原来当年女娲氏炼石补天之时，于大荒山无稽崖炼成高经十二丈、方经二十四丈大石三万六千五百零一块。娲皇氏只用了三万六千五百块，单单剩下一块未用，便弃在此山青埂峰下。</p>
+              </div>
+
+              <!-- Page Footer Actions -->
+              <div class="flex justify-between items-center pt-8 border-t custom-border">
+                <button onclick="switchChapter(1)" class="px-3 py-1.5 text-xs font-semibold rounded-lg border custom-border hover:bg-gray-50 dark:hover:bg-zinc-800 text-main" id="prev-chap-btn" disabled>上一章</button>
+                <span class="text-[10px] text-sec">本章结束 · 共 2 章</span>
+                <button onclick="switchChapter(2)" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-custom hover:bg-primary-hover text-white transition" id="next-chap-btn">下一章</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Mobile TOC Drawer Overlay (Toggles from bottom on mobile) -->
+        <div id="mobile-toc-drawer" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleMobileToc()">
+          <div class="absolute bottom-0 inset-x-0 bg-white dark:bg-zinc-900 rounded-t-2xl p-4 max-h-[70vh] flex flex-col justify-between" onclick="event.stopPropagation()">
+            <div class="border-b custom-border pb-2 flex justify-between items-center mb-3">
+              <span class="font-bold text-sm text-main">选择章节目录</span>
+              <button onclick="toggleMobileToc()" class="text-lg text-sec">&times;</button>
+            </div>
+            <div class="flex-1 overflow-y-auto space-y-1 mb-4">
+              <button onclick="switchChapter(1); toggleMobileToc()" class="w-full text-left px-3 py-2 text-xs font-bold rounded-lg bg-primary-suppl text-primary-custom truncate">第一回 甄士隐梦幻识通灵</button>
+              <button onclick="switchChapter(2); toggleMobileToc()" class="w-full text-left px-3 py-2 text-xs rounded-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 truncate">第二回 贾夫人仙逝扬州城</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mobile Reader settings sheet (Slide up settings menu) -->
+        <div id="mobile-settings-drawer" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleMobileSettings()">
+          <div class="absolute bottom-0 inset-x-0 bg-white dark:bg-zinc-900 rounded-t-2xl p-4 space-y-4" onclick="event.stopPropagation()">
+            <div class="border-b custom-border pb-2 flex justify-between items-center">
+              <span class="font-bold text-sm text-main">个性化阅读设置</span>
+              <button onclick="toggleMobileSettings()" class="text-lg text-sec">&times;</button>
+            </div>
+            
+            <div class="space-y-3 text-xs">
+              <!-- Font selection on mobile -->
+              <div class="flex justify-between items-center">
+                <span class="text-sec">字体风格</span>
+                <div class="flex border custom-border rounded-lg overflow-hidden">
+                  <button id="font-sans-btn" onclick="setReaderFont('sans')" class="px-2.5 py-1 bg-gray-50 text-main dark:bg-zinc-800">无衬线 (UI)</button>
+                  <button id="font-serif-btn" onclick="setReaderFont('serif')" class="px-2.5 py-1 bg-primary-custom text-white font-serif">优雅宋体</button>
+                </div>
+              </div>
+              <!-- Line spacing -->
+              <div class="flex justify-between items-center">
+                <span class="text-sec">行高间距</span>
+                <div class="flex border custom-border rounded-lg overflow-hidden">
+                  <button onclick="setLineHeight(1.5)" id="lh-1-5" class="px-2 py-1 bg-gray-50 text-main dark:bg-zinc-800">紧凑</button>
+                  <button onclick="setLineHeight(1.8)" id="lh-1-8" class="px-2 py-1 bg-primary-custom text-white">适中</button>
+                  <button onclick="setLineHeight(2.2)" id="lh-2-2" class="px-2 py-1 bg-gray-50 text-main dark:bg-zinc-800">宽松</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- View 5: Admin Control Panel (Mobile Responsive grid stacked) -->
+      <div id="view-panel-admin" class="space-y-4 hidden">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="custom-card border p-4 rounded-xl shadow-sm">
+            <h4 class="text-[10px] font-bold text-sec uppercase tracking-wider mb-1">系统存储占用</h4>
+            <span class="text-xl font-extrabold text-main">12.4 GB</span>
+          </div>
+          <div class="custom-card border p-4 rounded-xl shadow-sm">
+            <h4 class="text-[10px] font-bold text-sec uppercase tracking-wider mb-1">待审核图书</h4>
+            <span class="text-xl font-extrabold text-orange-500">2 册</span>
+          </div>
+          <div class="custom-card border p-4 rounded-xl shadow-sm">
+            <h4 class="text-[10px] font-bold text-sec uppercase tracking-wider mb-1">活跃用户</h4>
+            <span class="text-xl font-extrabold text-main">12 人</span>
+          </div>
+        </div>
+
+        <div class="custom-card border p-4 rounded-xl space-y-2">
+          <h4 class="text-xs font-bold text-main">待审核队列 (14.2)</h4>
+          <div class="divide-y divide-gray-100 dark:divide-zinc-800 space-y-2 text-xs">
+            <div class="pt-2 first:pt-0 flex justify-between items-center">
+              <div>
+                <span class="font-bold text-main">《微积分的力量》</span>
+                <span class="block text-[10px] text-sec">14.5 MB</span>
+              </div>
+              <div class="flex gap-1.5 shrink-0">
+                <button onclick="showNotification('审核通过！')" class="px-2 py-1 bg-emerald-600 text-white rounded">通过</button>
+                <button onclick="showNotification('审核驳回！')" class="px-2 py-1 bg-red-600 text-white rounded">驳回</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Universal Alert Toast (Sticky bottom) -->
+    <div id="toast-banner" class="fixed bottom-4 right-4 left-4 sm:left-auto px-4 py-2.5 bg-zinc-900 text-zinc-100 dark:bg-white dark:text-zinc-900 rounded-xl shadow-xl flex items-center space-x-2 transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none z-50">
+      <span class="text-xs font-semibold" id="toast-message">操作成功！</span>
+    </div>
+
+  </main>
+
+  <script>
+    // VIEW SWITCHER
+    const views = {
+      bookshelf: { title: '我的书架', subtitle: '共 4 本书' },
+      library: { title: '公共图书馆', subtitle: '共享知识库' },
+      upload: { title: '图书上传中心', subtitle: '多格式极速上传' },
+      reader: { title: '在线阅读器', subtitle: '多端排版引擎' },
+      admin: { title: '管理控制台', subtitle: '系统管理与配额' }
+    };
+
+    function switchView(viewName) {
+      Object.keys(views).forEach(v => {
+        const el = document.getElementById(`view-panel-${v}`);
+        if (el) el.classList.add('hidden');
+        
+        // Desktop nav highlights
+        const navEl = document.getElementById(`nav-${v}`);
+        if (navEl) navEl.className = "w-full flex items-center px-4 py-3 text-sm font-medium rounded-l-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition";
+        
+        // Mobile nav highlights
+        const mNavEl = document.getElementById(`m-nav-${v}`);
+        if (mNavEl) mNavEl.className = "w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg text-sec hover:bg-gray-100 dark:hover:bg-zinc-800 transition";
+      });
+
+      const targetEl = document.getElementById(`view-panel-${viewName}`);
+      if (targetEl) targetEl.classList.remove('hidden');
+
+      const activeNav = document.getElementById(`nav-${viewName}`);
+      if (activeNav) activeNav.className = "w-full flex items-center px-4 py-3 text-sm font-medium rounded-l-lg nav-active transition";
+
+      const mActiveNav = document.getElementById(`m-nav-${viewName}`);
+      if (mActiveNav) mActiveNav.className = "w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg nav-active transition";
+
+      document.getElementById('view-title').innerText = views[viewName].title;
+      document.getElementById('view-subtitle').innerText = views[viewName].subtitle;
+
+      document.getElementById('main-scroll-container').scrollTop = 0;
+    }
+
+    // THEME SWITCHING (REALTIME DESKTOP)
+    function setTheme(theme) {
+      const body = document.body;
+      body.className = '';
+
+      document.getElementById('theme-btn-modern').className = "px-3 py-1.5 font-semibold rounded-lg border transition bg-white text-slate-800 border-slate-300";
+      document.getElementById('theme-btn-sepia').className = "px-3 py-1.5 font-semibold rounded-lg border transition bg-[#fcf8ec] text-[#2c2214] border-[#e3d5b5]";
+      document.getElementById('theme-btn-dark').className = "px-3 py-1.5 font-semibold rounded-lg border transition bg-zinc-900 text-zinc-100 border-zinc-700";
+
+      if (theme === 'modern') {
+        body.classList.add('theme-modern');
+        document.getElementById('theme-btn-modern').classList.add('ring-2', 'ring-emerald-500', 'ring-offset-2', 'dark:ring-offset-black');
+      } else if (theme === 'sepia') {
+        body.classList.add('theme-sepia');
+        document.getElementById('theme-btn-sepia').classList.add('ring-2', 'ring-amber-700', 'ring-offset-2', 'dark:ring-offset-black');
+      } else if (theme === 'dark') {
+        body.classList.add('theme-dark');
+        document.getElementById('theme-btn-dark').classList.add('ring-2', 'ring-emerald-400', 'ring-offset-2');
+      }
+
+      showNotification(`已切换到 【${theme === 'modern' ? '简约现代' : theme === 'sepia' ? '温馨羊皮纸' : '深邃黑夜'}】 主题`);
+    }
+
+    // MOBILE THEME CYCLE SWITCHER
+    const mobileThemes = ['modern', 'sepia', 'dark'];
+    let currentMobileThemeIdx = 0;
+    function toggleMobileTheme() {
+      currentMobileThemeIdx = (currentMobileThemeIdx + 1) % mobileThemes.length;
+      setTheme(mobileThemes[currentMobileThemeIdx]);
+    }
+
+    // INTERACTIVE OVERLAYS
+    function toggleMobileMenu() {
+      const menu = document.getElementById('mobile-menu');
+      menu.classList.toggle('hidden');
+    }
+
+    function toggleMobileToc() {
+      const drawer = document.getElementById('mobile-toc-drawer');
+      drawer.classList.toggle('hidden');
+    }
+
+    function toggleMobileSettings() {
+      const drawer = document.getElementById('mobile-settings-drawer');
+      drawer.classList.toggle('hidden');
+    }
+
+    // TYPOGRAPHY CONTROLS
+    let currentFontSize = 16;
+    function adjustFontSize(delta) {
+      currentFontSize = Math.max(12, Math.min(26, currentFontSize + delta));
+      document.getElementById('font-size-val').innerText = `${currentFontSize}px`;
+      document.getElementById('viewport-chapter-text').style.fontSize = `${currentFontSize}px`;
+    }
+
+    function setReaderFont(fontType) {
+      const textDiv = document.getElementById('viewport-chapter-text');
+      const titleDiv = document.getElementById('viewport-chapter-title');
+      
+      const sansBtn = document.getElementById('font-sans-btn');
+      const serifBtn = document.getElementById('font-serif-btn');
+
+      if (fontType === 'sans') {
+        textDiv.style.fontFamily = "'Inter', sans-serif";
+        titleDiv.style.fontFamily = "'Inter', sans-serif";
+        sansBtn.className = "px-2.5 py-1 bg-primary-custom text-white";
+        serifBtn.className = "px-2.5 py-1 bg-gray-50 text-main dark:bg-zinc-800";
+      } else {
+        textDiv.style.fontFamily = "'Noto Serif SC', serif";
+        titleDiv.style.fontFamily = "'Noto Serif SC', serif";
+        sansBtn.className = "px-2.5 py-1 bg-gray-50 text-main dark:bg-zinc-800";
+        serifBtn.className = "px-2.5 py-1 bg-primary-custom text-white font-serif";
+      }
+    }
+
+    function setLineHeight(height) {
+      document.getElementById('viewport-chapter-text').style.lineHeight = height;
+      
+      document.getElementById('lh-1-5').className = "px-2 py-1 bg-gray-50 text-main dark:bg-zinc-800";
+      document.getElementById('lh-1-8').className = "px-2 py-1 bg-gray-50 text-main dark:bg-zinc-800";
+      document.getElementById('lh-2-2').className = "px-2 py-1 bg-gray-50 text-main dark:bg-zinc-800";
+
+      if (height === 1.5) document.getElementById('lh-1-5').className = "px-2 py-1 bg-primary-custom text-white";
+      else if (height === 1.8) document.getElementById('lh-1-8').className = "px-2 py-1 bg-primary-custom text-white";
+      else if (height === 2.2) document.getElementById('lh-2-2').className = "px-2 py-1 bg-primary-custom text-white";
+    }
+
+    // TOAST
+    let toastTimeout;
+    function showNotification(message) {
+      const toast = document.getElementById('toast-banner');
+      const msg = document.getElementById('toast-message');
+      
+      msg.innerText = message;
+      toast.classList.remove('translate-y-24', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-24', 'opacity-0');
+      }, 3000);
+    }
+
+    // SIMULATED BOOK OPENING
+    function openBookInReader(type, title, author) {
+      document.getElementById('viewport-chapter-title').innerText = title;
+      switchView('reader');
+      showNotification(`正在为您在手机/平板端，以自适应优雅排版，打开经典《${title}》`);
+    }
+
+    function addToBookshelf(cardId, successMessage) {
+      const card = document.getElementById(cardId);
+      const btn = card.querySelector('button');
+      btn.className = "px-3 py-1.5 bg-gray-100 text-gray-400 rounded-lg text-xs font-semibold shrink-0 cursor-not-allowed";
+      btn.innerText = "已加";
+      btn.disabled = true;
+      showNotification(successMessage);
+    }
+
+    const mockChapters = {
+      1: {
+        title: "第一回 甄士隐梦幻识通灵",
+        text: "<p>此开卷第一回也。作者自云：因曾历过一番梦幻之后，故将真事隐去...原来当年女娲氏炼石补天之时，于大荒山无稽崖炼成大石。</p>"
+      },
+      2: {
+        title: "第二回 贾夫人仙逝扬州城",
+        text: "<p>却说雨村忙回头看时，不是别人，却是那日同官代署户部员外郎冷子兴...今日在客栈中不期而遇，大谈荣国府贾宝玉出生含玉之事...</p>"
+      }
+    };
+
+    function switchChapter(chapIndex) {
+      const chap = mockChapters[chapIndex];
+      if (!chap) return;
+
+      document.getElementById('viewport-chapter-title').innerText = chap.title;
+      document.getElementById('viewport-chapter-text').innerHTML = chap.text;
+
+      document.getElementById('prev-chap-btn').disabled = chapIndex === 1;
+      document.getElementById('next-chap-btn').disabled = chapIndex === 2;
+
+      showNotification(`加载并保存至云端：第 ${chapIndex} 章`);
+    }
+  </script>
+</body>
+</html>
