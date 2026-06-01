@@ -1,6 +1,12 @@
-# 阅读器后端开发文档
+# 阅读器后端最终开发文档
 
-本文档基于 `reader-project-plan.md`、`reader-backend-build.md` 和 `legado-local-book-parsing.md` 汇总整理，是后续后端开发的主依据。若其他文档与本文档冲突，开发时优先按本文档执行；确需调整时，应先更新本文档再编码。
+本文档是后续后端开发、构建、运行、测试和部署的主依据。`reader-api-contract.md` 仍是前后端接口契约的最高优先级；若接口契约调整，必须同步更新本文档。过时的后端构建文档已删除，避免维护第二套后端说明。
+
+维护规则：
+
+- 后端实现、接口语义、部署方式、测试方式发生变化时，必须同步更新本文档。
+- 与前端协作有关的请求、响应、鉴权和资源 URL 规则，必须同步更新 `reader-api-contract.md`。
+- 本文档同时记录目标设计和当前落地状态；若二者不同，以“当前实现状态”和代码为准，再决定是否继续补齐目标能力。
 
 ## 1. 项目定位
 
@@ -21,23 +27,34 @@
 
 第一期坚持轻量实现，不引入 Redis、Elasticsearch、MQ、对象存储、全文搜索服务或重型转码服务。
 
+当前实现状态：
+
+- 后端已落地在 `backend/`，使用 Go + Gin + GORM。
+- 数据库使用 PostgreSQL，测试环境使用 `test/docker-compose.yml` 中的 PostgreSQL 17 容器。
+- 服务启动时自动执行内嵌 SQL migration。
+- 后端 HTTP 端口为 `8080`，测试 PostgreSQL 暴露到宿主机 `15432`。
+- 前端开发服务通常运行在 `5173`，通过 Vite proxy 将 `/api` 转发到 `8080`。
+- 当前 Docker 后端镜像只构建 Go 后端；前端生产构建托管可通过 `FRONTEND_DIST_DIR` 指向磁盘目录。
+- 当前 EPUB 章节内容已经支持普通 `<img src>` 和 SVG `<image href/xlink:href>` 图片归一化。
+- 当前 EPUB 内嵌资源接口支持 Authorization 访问，也支持章节 HTML 内后端签名 URL 访问。
+
 ## 2. 技术栈
 
 固定后端技术栈：
 
-- 语言：Go 1.23 或更新稳定版本。
+- 语言：Go 1.25。
 - HTTP 框架：Gin。
 - ORM：GORM。
-- 数据库：PostgreSQL 16 或 17。
+- 数据库：PostgreSQL 17，PostgreSQL 16 兼容。
 - 认证：JWT Access Token + Refresh Token。
 - 密码哈希：bcrypt。
 - 日志：标准库 `log/slog`。
 - 配置：环境变量。
 - 文件存储：本地磁盘 `/data`。
-- 数据库迁移：SQL migration 文件。
-- 部署：Docker 多阶段构建 + docker-compose。
+- 数据库迁移：内嵌 SQL migration 文件，服务启动时自动执行。
+- 部署：Docker 多阶段构建 + docker compose。
 
-推荐依赖：
+当前依赖：
 
 - `github.com/gin-gonic/gin`
 - `gorm.io/gorm`
@@ -45,12 +62,10 @@
 - `github.com/golang-jwt/jwt/v5`
 - `golang.org/x/crypto/bcrypt`
 - `github.com/google/uuid`
-- `github.com/golang-migrate/migrate/v4`
-- `github.com/joho/godotenv`，仅开发环境可选。
 
-正式 schema 管理使用 SQL migration，不使用 GORM AutoMigrate 作为生产迁移方案。
+正式 schema 管理使用 SQL migration，不使用 GORM AutoMigrate。当前项目使用 `backend/migrations/embed.go` 将 `*.up.sql` 内嵌到后端二进制，并由 `internal/database/migrate.go` 在启动时按文件名顺序执行。
 
-## 3. 后端目录结构
+## 3. 后端目录结构和当前实现
 
 后端目录统一放在 `backend/`。
 
@@ -59,11 +74,13 @@ backend/
   cmd/
     server/
       main.go
-    migrate/
-      main.go
   internal/
     app/
+      admin.go
       app.go
+      bookmarks.go
+      books.go
+      dto.go
       router.go
       static.go
     config/
@@ -81,96 +98,60 @@ backend/
       logger.go
       body_limit.go
     auth/
-      handler.go
-      service.go
-      repository.go
       token.go
       password.go
-      model.go
-      dto.go
-    user/
-      handler.go
-      service.go
-      repository.go
-      model.go
-      dto.go
-    book/
-      model.go
-      repository.go
-      service.go
-      dto.go
-    bookshelf/
-      handler.go
-      service.go
-      repository.go
-      dto.go
-    library/
-      handler.go
-      service.go
-      repository.go
-      dto.go
-    category/
-      handler.go
-      service.go
-      repository.go
-      model.go
-      dto.go
-    tag/
-      handler.go
-      service.go
-      repository.go
-      model.go
-      dto.go
-    reader/
-      handler.go
-      service.go
-      progress.go
-      resource.go
-      dto.go
-    parser/
-      parser.go
-      model.go
-      htmlfmt/
-      txt/
-      epub/
-      pdf/
-    upload/
-      service.go
-      validator.go
-      hash.go
-    storage/
-      storage.go
-      local.go
-      path.go
-    admin/
-      handler.go
-      service.go
-    system/
-      handler.go
-      service.go
-      settings.go
     common/
       errors.go
-      response.go
       pagination.go
-      validate.go
+      response.go
       time.go
+    model/
+      book.go
+      constants.go
+      user.go
+    parser/
+      parser.go
+      parser_test.go
+    storage/
+      local.go
   migrations/
-  tests/
-    integration/
+    embed.go
+    000001_init.up.sql
+    000001_init.down.sql
+    000002_backfill_bookshelf_added_at.up.sql
+    000002_backfill_bookshelf_added_at.down.sql
+  Dockerfile
   go.mod
   go.sum
 ```
 
 分层规则：
 
-- `handler` 只处理 HTTP 参数、认证上下文和响应。
-- `service` 处理业务规则、权限组合、事务和跨模块调用。
-- `repository` 只处理数据库查询和持久化。
+- 当前 MVP 将多数 HTTP handler 和业务编排集中在 `internal/app`，优先保持行为正确和接口稳定。
+- 后续若单文件继续膨胀，可按 `auth`、`reader`、`bookshelf`、`library`、`admin` 拆分 handler/service/repository，但必须保持接口契约不变。
 - `model` 定义数据库模型和枚举常量。
 - `dto` 定义请求和响应结构。
 - `storage` 是唯一允许生成真实文件路径的模块。
 - `parser` 是唯一处理图书格式解析、章节定位和资源读取的模块。
+- `migrations` 使用 `embed.FS` 打入二进制，服务启动时自动迁移。
+
+仓库级测试和运行辅助目录：
+
+```text
+test/
+  docker-compose.yml       # PostgreSQL + backend 测试编排
+  postgres/                # 单独 PostgreSQL 测试环境和数据
+  backend-data/            # backend 测试运行数据卷
+  backend-build/           # 本地 go build 产物
+  go-build-cache/          # Go 测试/构建缓存
+  backend-gocache/         # 容器/本地辅助缓存
+  tmp/                     # smoke test 临时文件
+  run-backend.sh
+  smoke.sh
+  终端输出.md
+```
+
+约束：本地测试产生的数据、数据库文件、构建产物和临时文件必须优先放在 `test/` 下，避免污染项目其他目录。
 
 ## 4. 配置项
 
@@ -1378,15 +1359,26 @@ EPUB 内嵌资源接口：
 GET /api/v1/reader/books/:bookId/resources?href=images/cover.jpg
 ```
 
+章节 HTML 内资源 URL 示例：
+
+```http
+GET /api/v1/reader/books/:bookId/resources?expires=1780333831&href=images/cover.jpg&sig=...&uid=2
+```
+
 规则：
 
-- 先做阅读权限校验。
 - `href` 必填，表示 EPUB 内部资源相对路径或已规范化路径。
 - 后端必须对 `href` 做规范化和路径穿越检查，禁止读取 EPUB 外部文件。
 - 响应应返回资源原始字节和正确 `Content-Type`。
 - 图片类型至少支持 JPEG、PNG、GIF、WEBP、SVG。
-- 可返回 `Cache-Control: private, max-age=3600`，但不能绕过鉴权。
+- 常规 API 调用携带 `Authorization: Bearer <access_token>`，服务端按当前用户做阅读权限校验。
+- 章节 HTML 内的 `<img>` 请求无法携带 Authorization，因此后端在章节内容中生成带 `uid`、`expires`、`sig` 的短期签名 URL。
+- 签名必须绑定用户 ID、图书 ID、规范化资源 href 和过期时间。
+- 签名访问时仍必须查询用户状态，并调用阅读权限校验；签名只替代 Authorization 头，不替代权限判断。
+- 签名过期、缺失或不匹配时返回 401。
+- 可返回 `Cache-Control: private, max-age=3600`。
 - 章节 HTML 中的 `<img src>` 应改写为该接口 URL，并对 `href` 做 URL 编码。
+- EPUB 的 `<svg><image href="...">` 和 `<svg><image xlink:href="...">` 必须归一为普通 `<img src="...">` 后再返回给前端。
 
 阅读进度保存：
 
@@ -1655,6 +1647,9 @@ conn_max_lifetime=1h
 - TXT 编码识别。
 - TXT 目录规则选择。
 - TXT 字节偏移分章。
+- EPUB `<img src>` 相对路径改写。
+- EPUB SVG `<image href>` / `<image xlink:href>` 归一成普通 `<img src>`。
+- EPUB 资源 href 规范化和路径穿越防护。
 
 集成测试必须覆盖：
 
@@ -1672,6 +1667,10 @@ conn_max_lifetime=1h
 - 管理员隐藏公共图书后普通用户不可读。
 - PDF 文件接口支持 Range。
 - TXT 章节内容接口只读取对应字节范围。
+- EPUB 章节内容中的普通图片和 SVG 封面图片都能被改写为可访问资源 URL。
+- EPUB 内嵌资源接口在携带 Authorization 时可访问。
+- EPUB 内嵌资源接口在使用后端生成的 `uid/expires/sig` 签名 URL 时可被浏览器图片请求访问。
+- 过期或篡改的 EPUB 资源签名返回 401。
 - 阅读进度 upsert 正常。
 
 手工验收：
@@ -1681,12 +1680,13 @@ conn_max_lifetime=1h
 3. 注册第一个用户并确认角色为管理员。
 4. 注册第二个用户并确认角色为普通用户。
 5. 上传私有 EPUB，确认生成章节。
-6. 上传 TXT，确认自动分章并能按章节读取。
-7. 上传公共 PDF。
-8. 第二个用户将公共 PDF 加入书架。
-9. 磁盘上公共 PDF 只有一份。
-10. 保存阅读进度。
-11. 管理员隐藏公共图书，普通用户无法继续读取。
+6. 打开 EPUB 封面章节，确认 SVG `<image xlink:href>` 封面能显示为正常图片。
+7. 上传 TXT，确认自动分章并能按章节读取。
+8. 上传公共 PDF。
+9. 第二个用户将公共 PDF 加入书架。
+10. 磁盘上公共 PDF 只有一份。
+11. 保存阅读进度。
+12. 管理员隐藏公共图书，普通用户无法继续读取。
 
 ## 25. 开发阶段
 
@@ -1819,28 +1819,70 @@ conn_max_lifetime=1h
 - 管理员维护 TXT 目录规则。
 - 用户对单本书重新解析目录。
 
-## 26. Docker 部署
+## 26. 构建、运行和 Docker 部署
 
 部署形态：
 
 ```text
-book-reader-app        Go 后端 + 前端静态资源
-book-reader-postgres   PostgreSQL 数据库
+book-reader-test-backend    Go 后端测试容器，宿主机端口 8080
+book-reader-test-postgres   PostgreSQL 17 测试容器，宿主机端口 15432
 ```
 
 应用容器挂载：
 
 ```text
-/data
+test/backend-data -> /data
+test/postgres/data -> PostgreSQL PGDATA
 ```
 
-Dockerfile 使用多阶段构建：
+当前 `backend/Dockerfile`：
 
-1. Node 阶段构建前端。
-2. Go 阶段构建后端并拷贝前端 `dist`。
-3. Alpine 或 distroless 运行阶段只包含二进制和必要目录。
+1. `golang:1.25-alpine` 构建阶段执行 `go build -o /out/book-reader-server ./cmd/server`。
+2. `alpine:3.22` 运行阶段只包含后端二进制。
+3. 容器入口为 `/app/book-reader-server`。
 
-后端第一期可使用 Go `embed` 托管前端资源。若前端尚未创建，提供占位 `index.html`。
+当前 Docker 测试栈：
+
+```bash
+cd /Users/cyilin/dev/book-server/test
+docker compose up -d --build
+```
+
+只重建后端：
+
+```bash
+cd /Users/cyilin/dev/book-server/test
+docker compose up -d --build backend
+```
+
+本地只运行后端，连接测试 PostgreSQL：
+
+```bash
+cd /Users/cyilin/dev/book-server
+bash test/run-backend.sh
+```
+
+后端测试和构建：
+
+```bash
+cd /Users/cyilin/dev/book-server/backend
+GOCACHE=/Users/cyilin/dev/book-server/test/go-build-cache go test ./...
+GOCACHE=/Users/cyilin/dev/book-server/test/go-build-cache go build -o /Users/cyilin/dev/book-server/test/backend-build/book-reader-server ./cmd/server
+```
+
+Smoke test：
+
+```bash
+cd /Users/cyilin/dev/book-server
+bash test/smoke.sh
+```
+
+前端静态资源托管：
+
+- 当前后端通过 `FRONTEND_DIST_DIR` 从磁盘目录托管前端 `dist`。
+- 若 `FRONTEND_DIST_DIR/index.html` 不存在，后端返回内置占位 HTML，表示后端正在运行。
+- API 路由优先；非 `/api/*` 路径回退到前端 `index.html`，支持 Vue Router history 模式。
+- 生产环境可在独立流程中构建前端，并将 `FRONTEND_DIST_DIR` 指向该构建产物目录；也可后续扩展 Dockerfile 增加 Node 构建阶段。
 
 ## 27. 已确认实现决策
 
@@ -1859,4 +1901,4 @@ Dockerfile 使用多阶段构建：
 11. 需要用户存储配额，管理员可调整单个用户配额。
 12. 不允许匿名浏览公共图书馆；公共图书馆仅登录用户可访问。
 13. 所有真实文件路径必须由 `storage` 模块生成和校验。
-14. 所有阅读文件、封面和资源访问都必须先鉴权。
+14. 阅读文件和封面访问必须携带 Authorization；EPUB 内嵌资源访问必须携带 Authorization 或后端签名 URL，且两种方式都必须通过阅读权限校验。

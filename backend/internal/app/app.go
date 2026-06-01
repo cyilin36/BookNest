@@ -52,6 +52,7 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	api := r.Group("/api/v1")
 	api.GET("/health", s.health)
 	api.GET("/system/info", s.systemInfo)
+	api.GET("/reader/books/:bookId/resources", s.readerResource)
 
 	api.POST("/auth/register", s.register)
 	api.POST("/auth/login", s.login)
@@ -86,7 +87,6 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	authRoutes.GET("/reader/books/:bookId/text", s.readerText)
 	authRoutes.GET("/reader/books/:bookId/chapters", s.readerChapters)
 	authRoutes.GET("/reader/books/:bookId/chapters/:chapterId/content", s.readerChapterContent)
-	authRoutes.GET("/reader/books/:bookId/resources", s.readerResource)
 	authRoutes.GET("/reader/books/:bookId/progress", s.readerProgress)
 	authRoutes.PUT("/reader/books/:bookId/progress", s.saveReaderProgress)
 
@@ -388,7 +388,7 @@ func (s *Server) respondSession(c *gin.Context, u *model.User) {
 	common.RespondJSON(c, middleware.GetRequestID(c), AuthSession{AccessToken: access, TokenType: "Bearer", ExpiresIn: expires, User: u})
 }
 
-func (s *Server) chapterContentFromBook(book model.Book, ch model.BookChapter) (string, string, error) {
+func (s *Server) chapterContentFromBook(book model.Book, ch model.BookChapter, userID int64) (string, string, error) {
 	path, err := s.store.BookPath(book.FilePath)
 	if err != nil {
 		return "", "", err
@@ -400,7 +400,9 @@ func (s *Server) chapterContentFromBook(book model.Book, ch model.BookChapter) (
 	case model.BookFormatPDF:
 		return "html", parser.PDFChapterHTML(ch), nil
 	case model.BookFormatEPUB:
-		content, err := parser.ReadEPUBContent(path, ch, book.ID)
+		content, err := parser.ReadEPUBContentWithResourceURL(path, ch, func(href string) string {
+			return s.epubResourceURL(book.ID, userID, href)
+		})
 		return "html", content, err
 	default:
 		return "text", "", common.ErrUnsupportedMedia

@@ -1,10 +1,14 @@
 package app
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,6 +24,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+const epubResourceURLTTL = 30 * time.Minute
 
 func (s *Server) uploadPrivateBook(c *gin.Context) {
 	s.uploadBook(c, model.BookVisibilityPrivate)
@@ -1077,7 +1083,7 @@ func (s *Server) readerChapterContent(c *gin.Context) {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
 		return
 	}
-	contentType, content, err := s.chapterContentFromBook(b, ch)
+	contentType, content, err := s.chapterContentFromBook(b, ch, middleware.CurrentUser(c).ID)
 	if err != nil {
 		common.RespondError(c, middleware.GetRequestID(c), err)
 		return
@@ -1090,18 +1096,18 @@ func (s *Server) readerResource(c *gin.Context) {
 	if !ok {
 		return
 	}
-	b, err := s.readAllowed(middleware.CurrentUser(c), bookID)
+	href := parser.CleanResourceHref(c.Query("href"))
+	if strings.TrimSpace(href) == "" {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrInvalidRequest)
+		return
+	}
+	b, err := s.readerResourceBook(c, bookID, href)
 	if err != nil {
 		common.RespondError(c, middleware.GetRequestID(c), err)
 		return
 	}
 	if b.Format != model.BookFormatEPUB {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrUnsupportedMedia)
-		return
-	}
-	href := c.Query("href")
-	if strings.TrimSpace(href) == "" {
-		common.RespondError(c, middleware.GetRequestID(c), common.ErrInvalidRequest)
 		return
 	}
 	path, err := s.store.BookPath(b.FilePath)
@@ -1119,6 +1125,76 @@ func (s *Server) readerResource(c *gin.Context) {
 	c.Header("Cache-Control", "private, max-age=3600")
 	c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, resource.Name))
 	_, _ = io.Copy(c.Writer, resource.Body)
+}
+
+func (s *Server) readerResourceBook(c *gin.Context, bookID int64, href string) (model.Book, error) {
+	if u, err := s.userFromAuthorization(c); err != nil {
+		return model.Book{}, common.ErrUnauthorized
+	} else if u != nil {
+		return s.readAllowed(u, bookID)
+	}
+	userID, ok := s.verifyEPUBResourceSignature(c, bookID, href)
+	if !ok {
+		return model.Book{}, common.ErrUnauthorized
+	}
+	u, err := s.FindUserByID(userID)
+	if err != nil || u.Status != model.UserStatusActive {
+		return model.Book{}, common.ErrUnauthorized
+	}
+	return s.readAllowed(u, bookID)
+}
+
+func (s *Server) userFromAuthorization(c *gin.Context) (*model.User, error) {
+	h := c.GetHeader("Authorization")
+	if !strings.HasPrefix(h, "Bearer ") {
+		return nil, nil
+	}
+	claims, err := s.VerifyAccessToken(strings.TrimSpace(strings.TrimPrefix(h, "Bearer ")))
+	if err != nil {
+		return nil, err
+	}
+	userID, err := strconv.ParseInt(claims.Subject, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	u, err := s.FindUserByID(userID)
+	if err != nil || u.Status != model.UserStatusActive {
+		return nil, common.ErrUnauthorized
+	}
+	return u, nil
+}
+
+func (s *Server) epubResourceURL(bookID, userID int64, href string) string {
+	cleanHref := parser.CleanResourceHref(href)
+	expires := time.Now().Add(epubResourceURLTTL).Unix()
+	q := url.Values{}
+	q.Set("href", cleanHref)
+	q.Set("uid", strconv.FormatInt(userID, 10))
+	q.Set("expires", strconv.FormatInt(expires, 10))
+	q.Set("sig", s.signEPUBResource(bookID, userID, cleanHref, expires))
+	return fmt.Sprintf("/api/v1/reader/books/%d/resources?%s", bookID, q.Encode())
+}
+
+func (s *Server) verifyEPUBResourceSignature(c *gin.Context, bookID int64, href string) (int64, bool) {
+	userID, err := strconv.ParseInt(c.Query("uid"), 10, 64)
+	if err != nil || userID <= 0 {
+		return 0, false
+	}
+	expires, err := strconv.ParseInt(c.Query("expires"), 10, 64)
+	if err != nil || expires < time.Now().Unix() {
+		return 0, false
+	}
+	expected := s.signEPUBResource(bookID, userID, href, expires)
+	if !hmac.Equal([]byte(expected), []byte(c.Query("sig"))) {
+		return 0, false
+	}
+	return userID, true
+}
+
+func (s *Server) signEPUBResource(bookID, userID int64, href string, expires int64) string {
+	mac := hmac.New(sha256.New, []byte(s.cfg.JWTSecret))
+	_, _ = fmt.Fprintf(mac, "%d\n%d\n%s\n%d", bookID, userID, href, expires)
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func (s *Server) readerProgress(c *gin.Context) {

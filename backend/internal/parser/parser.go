@@ -268,7 +268,15 @@ func isEPUBDocument(mediaType, href string) bool {
 	return mt == "application/xhtml+xml" || mt == "text/html" || ext == ".xhtml" || ext == ".html" || ext == ".htm"
 }
 
+type ResourceURLFunc func(href string) string
+
 func ReadEPUBContent(filePath string, chapter model.BookChapter, bookID int64) (string, error) {
+	return ReadEPUBContentWithResourceURL(filePath, chapter, func(href string) string {
+		return fmt.Sprintf("/api/v1/reader/books/%d/resources?href=%s", bookID, url.QueryEscape(href))
+	})
+}
+
+func ReadEPUBContentWithResourceURL(filePath string, chapter model.BookChapter, resourceURL ResourceURLFunc) (string, error) {
 	if chapter.Href == nil || strings.TrimSpace(*chapter.Href) == "" {
 		return "", nil
 	}
@@ -284,7 +292,7 @@ func ReadEPUBContent(filePath string, chapter model.BookChapter, bookID int64) (
 	htmlText := string(data)
 	htmlText = removeTagContent(htmlText, "script")
 	htmlText = removeTagContent(htmlText, "style")
-	htmlText = rewriteEPUBImageSources(htmlText, cleanZipPath(*chapter.Href), bookID)
+	htmlText = rewriteEPUBImageSources(htmlText, cleanZipPath(*chapter.Href), resourceURL)
 	return htmlText, nil
 }
 
@@ -309,7 +317,11 @@ func ReadEPUBResource(filePath, href string) (*Resource, error) {
 	return &Resource{Name: path.Base(cleanHref), ContentType: ct, Body: io.NopCloser(bytes.NewReader(data))}, nil
 }
 
-func rewriteEPUBImageSources(htmlText, docHref string, bookID int64) string {
+func rewriteEPUBImageSources(htmlText, docHref string, resourceURL ResourceURLFunc) string {
+	if resourceURL == nil {
+		resourceURL = func(href string) string { return href }
+	}
+	htmlText = normalizeEPUBSVGImages(htmlText)
 	re := regexp.MustCompile(`(?i)(<img\b[^>]*\bsrc\s*=\s*["'])([^"']+)(["'])`)
 	base := path.Dir(docHref)
 	return re.ReplaceAllStringFunc(htmlText, func(match string) string {
@@ -322,9 +334,63 @@ func rewriteEPUBImageSources(htmlText, docHref string, bookID int64) string {
 			return match
 		}
 		resource := cleanZipPath(path.Join(base, src))
-		encoded := url.QueryEscape(resource)
-		return parts[1] + fmt.Sprintf("/api/v1/reader/books/%d/resources?href=%s", bookID, encoded) + parts[3]
+		if resource == "" {
+			return match
+		}
+		return parts[1] + html.EscapeString(resourceURL(resource)) + parts[3]
 	})
+}
+
+func normalizeEPUBSVGImages(htmlText string) string {
+	htmlText = regexp.MustCompile(`(?is)<svg\b[^>]*>\s*<image\b([^>]*)/?\s*>\s*(?:</image>\s*)?</svg>`).ReplaceAllStringFunc(htmlText, func(match string) string {
+		parts := regexp.MustCompile(`(?is)<image\b([^>]*)/?\s*>`).FindStringSubmatch(match)
+		if len(parts) != 2 {
+			return match
+		}
+		return imageAttrsToHTMLImage(parts[1], match)
+	})
+	return regexp.MustCompile(`(?is)<image\b([^>]*)/?\s*>\s*(?:</image>)?`).ReplaceAllStringFunc(htmlText, func(match string) string {
+		parts := regexp.MustCompile(`(?is)<image\b([^>]*)/?\s*>`).FindStringSubmatch(match)
+		if len(parts) != 2 {
+			return match
+		}
+		return imageAttrsToHTMLImage(parts[1], match)
+	})
+}
+
+func imageAttrsToHTMLImage(attrs, fallback string) string {
+	href := imageHrefAttr(attrs)
+	if strings.TrimSpace(href) == "" {
+		return fallback
+	}
+	cleaned := removeImageHrefAttrs(attrs)
+	return fmt.Sprintf(`<img src="%s"%s>`, html.EscapeString(href), cleaned)
+}
+
+func imageHrefAttr(attrs string) string {
+	for _, pattern := range []string{`(?is)(?:^|\s)(?:xlink:)?href\s*=\s*"([^"]*)"`, `(?is)(?:^|\s)(?:xlink:)?href\s*=\s*'([^']*)'`} {
+		parts := regexp.MustCompile(pattern).FindStringSubmatch(attrs)
+		if len(parts) == 2 {
+			return html.UnescapeString(strings.TrimSpace(parts[1]))
+		}
+	}
+	return ""
+}
+
+func removeImageHrefAttrs(attrs string) string {
+	cleaned := attrs
+	for _, pattern := range []string{`(?is)\s+(?:xlink:)?href\s*=\s*"[^"]*"`, `(?is)\s+(?:xlink:)?href\s*=\s*'[^']*'`} {
+		cleaned = regexp.MustCompile(pattern).ReplaceAllString(cleaned, "")
+	}
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return ""
+	}
+	return " " + cleaned
+}
+
+func CleanResourceHref(v string) string {
+	return cleanZipPath(v)
 }
 
 func cleanZipPath(v string) string {

@@ -660,12 +660,24 @@ GET /api/v1/reader/books/:bookId/chapters/:chapterId/content
 
 响应：`ReaderChapterContent`。
 
-规则：TXT 返回 `content_type='text'`；EPUB 可返回后端净化后的 `html`。章节 HTML 内图片地址应改写为 `/api/v1/reader/books/:bookId/resources?href=...`。
+规则：
+
+- TXT 返回 `content_type='text'`。
+- EPUB 返回后端净化后的 `html`。
+- EPUB 章节 HTML 内图片地址应改写为 `/api/v1/reader/books/:bookId/resources?href=...`。
+- EPUB 中的 SVG `<image href="...">`、`<image xlink:href="...">` 应由后端归一成普通 `<img src="...">`，便于前端直接渲染。
+- 章节 HTML 中的资源 URL 可由后端追加 `uid`、`expires`、`sig` 签名参数；前端应把该 URL 当作不透明地址直接渲染，不需要自行构造签名。
 
 ### EPUB 内嵌资源
 
 ```http
 GET /api/v1/reader/books/:bookId/resources?href=images/cover.jpg
+```
+
+章节内容接口返回的图片 URL 可能形如：
+
+```http
+GET /api/v1/reader/books/:bookId/resources?expires=1780333831&href=images/cover.jpg&sig=...&uid=2
 ```
 
 响应：资源原始字节和正确 `Content-Type`。
@@ -675,7 +687,12 @@ GET /api/v1/reader/books/:bookId/resources?href=images/cover.jpg
 - `href` 必填，必须 URL 编码。
 - 后端必须规范化路径并防止路径穿越。
 - 图片类型至少支持 JPEG、PNG、GIF、WEBP、SVG。
-- 可返回 `Cache-Control: private, max-age=3600`，但不能绕过鉴权。
+- 资源接口支持两种访问方式：
+  - 常规 API 调用：携带 `Authorization: Bearer <access_token>`。
+  - 章节 HTML 内图片请求：使用后端生成的 `uid`、`expires`、`sig` 签名参数。
+- 签名参数由后端生成，绑定用户、图书、资源路径和过期时间；签名过期或无效时返回 401。
+- 即使使用签名 URL，后端仍必须校验用户状态和该用户对图书的阅读权限。
+- 可返回 `Cache-Control: private, max-age=3600`。
 
 ### 获取阅读进度
 

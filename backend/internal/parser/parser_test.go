@@ -51,6 +51,16 @@ func TestParseEPUBAndResource(t *testing.T) {
 	if !strings.Contains(content, "/api/v1/reader/books/9/resources?href=OEBPS%2Fimages%2Fcover.png") {
 		t.Fatalf("image src was not rewritten: %s", content)
 	}
+	svgContent, err := ReadEPUBContent(file, result.Chapters[1], 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(svgContent, "<image") || strings.Contains(svgContent, "xlink:href") {
+		t.Fatalf("svg image was not normalized: %s", svgContent)
+	}
+	if !strings.Contains(svgContent, `<img src="/api/v1/reader/books/9/resources?href=OEBPS%2Fimages%2Fcover.png"`) {
+		t.Fatalf("svg image src was not rewritten: %s", svgContent)
+	}
 	resource, err := ReadEPUBResource(file, "OEBPS/images/cover.png")
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +113,7 @@ func createTestEPUB(t *testing.T, file string) {
   <spine><itemref idref="c1"/><itemref idref="c2"/></spine>
 </package>`)
 	addZipFile(t, zw, "OEBPS/chap1.xhtml", `<html><head><title>One</title></head><body><p>Hello</p><img src="images/cover.png"/></body></html>`)
-	addZipFile(t, zw, "OEBPS/chap2.xhtml", `<html><head><title>Two</title></head><body><p>World</p></body></html>`)
+	addZipFile(t, zw, "OEBPS/chap2.xhtml", `<html><head><title>Two</title></head><body><svg xmlns="http://www.w3.org/2000/svg"><image width="600" height="800" xlink:href="images/cover.png"></image></svg></body></html>`)
 	addZipFile(t, zw, "OEBPS/images/cover.png", "\x89PNG\r\n\x1a\n")
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
