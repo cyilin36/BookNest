@@ -28,7 +28,7 @@ const isShelf = computed(() => props.mode === 'bookshelf' && 'source_type' in pr
 </script>
 
 <template>
-  <article class="book-card surface" :class="{ unreadable: 'readable' in book && !book.readable }">
+  <article class="book-card surface">
     <button class="cover-button" type="button" @click="emit('open')">
       <BookCover :src="book.cover_url" :title="book.title" />
     </button>
@@ -78,10 +78,6 @@ const isShelf = computed(() => props.mode === 'bookshelf' && 'source_type' in pr
   gap: 12px;
   min-height: 158px;
   padding: 12px;
-}
-
-.book-card.unreadable {
-  opacity: 0.66;
 }
 
 .cover-button,
