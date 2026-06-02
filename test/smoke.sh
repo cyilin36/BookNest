@@ -4,6 +4,14 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://localhost:8080/api/v1}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$ROOT_DIR/test/tmp"
+SMOKE_USERNAME="${SMOKE_USERNAME:-admin_test}"
+SMOKE_EMAIL="${SMOKE_EMAIL:-admin_test@example.com}"
+SMOKE_PASSWORD="${SMOKE_PASSWORD:-test123456}"
+SMOKE_NICKNAME="${SMOKE_NICKNAME:-Admin Test}"
+POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-book-reader-test-postgres}"
+POSTGRES_USER="${POSTGRES_USER:-book_reader}"
+POSTGRES_DB="${POSTGRES_DB:-book_reader}"
+TMP_BOOK=""
 mkdir -p "$TMP_DIR"
 
 wait_for() {
@@ -26,6 +34,63 @@ json_expr() {
   python3 -c 'import json,sys; data=json.load(sys.stdin); print(eval(sys.argv[1], {}, {"data": data}))' "$1"
 }
 
+cleanup_smoke_user() {
+  if ! docker ps --format '{{.Names}}' | grep -qx "$POSTGRES_CONTAINER"; then
+    return 0
+  fi
+  while IFS= read -r file_path; do
+    if [ -n "$file_path" ] && [[ "$file_path" != /* ]] && [[ "$file_path" != *..* ]]; then
+      rm -f "$ROOT_DIR/test/backend-data/books/$file_path"
+    fi
+  done < <(
+    docker exec -i "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
+      -v smoke_username="$SMOKE_USERNAME" <<'SQL'
+SELECT file_path FROM books WHERE owner_user_id IN (SELECT id FROM users WHERE username = :'smoke_username');
+SQL
+  )
+  docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    -v smoke_username="$SMOKE_USERNAME" <<'SQL'
+BEGIN;
+CREATE TEMP TABLE smoke_user_ids ON COMMIT DROP AS
+  SELECT id FROM users WHERE username = :'smoke_username';
+CREATE TEMP TABLE smoke_book_ids ON COMMIT DROP AS
+  SELECT id FROM books WHERE owner_user_id IN (SELECT id FROM smoke_user_ids);
+CREATE TEMP TABLE smoke_bookshelf_ids ON COMMIT DROP AS
+  SELECT id FROM bookshelves
+  WHERE user_id IN (SELECT id FROM smoke_user_ids)
+     OR book_id IN (SELECT id FROM smoke_book_ids);
+
+DELETE FROM bookshelf_tags WHERE bookshelf_id IN (SELECT id FROM smoke_bookshelf_ids);
+DELETE FROM bookmarks
+WHERE user_id IN (SELECT id FROM smoke_user_ids)
+   OR bookshelf_id IN (SELECT id FROM smoke_bookshelf_ids)
+   OR book_id IN (SELECT id FROM smoke_book_ids);
+DELETE FROM reading_progress
+WHERE user_id IN (SELECT id FROM smoke_user_ids)
+   OR bookshelf_id IN (SELECT id FROM smoke_bookshelf_ids)
+   OR book_id IN (SELECT id FROM smoke_book_ids);
+DELETE FROM bookshelves WHERE id IN (SELECT id FROM smoke_bookshelf_ids);
+DELETE FROM book_categories WHERE book_id IN (SELECT id FROM smoke_book_ids);
+DELETE FROM book_tags WHERE book_id IN (SELECT id FROM smoke_book_ids);
+DELETE FROM book_chapters WHERE book_id IN (SELECT id FROM smoke_book_ids);
+DELETE FROM refresh_tokens WHERE user_id IN (SELECT id FROM smoke_user_ids);
+DELETE FROM books WHERE id IN (SELECT id FROM smoke_book_ids);
+DELETE FROM users WHERE id IN (SELECT id FROM smoke_user_ids);
+COMMIT;
+SQL
+}
+
+cleanup_on_exit() {
+  if [ -n "$TMP_BOOK" ]; then
+    rm -f "$TMP_BOOK"
+  fi
+  cleanup_smoke_user
+}
+
+trap cleanup_on_exit EXIT
+
+cleanup_smoke_user
+
 wait_for "$BASE_URL/health"
 
 echo "health:"
@@ -36,11 +101,11 @@ echo "system info:"
 curl -fsS "$BASE_URL/system/info"
 echo
 
-REGISTER_PAYLOAD='{"username":"admin_test","email":"admin_test@example.com","password":"test123456","nickname":"Admin Test"}'
+REGISTER_PAYLOAD="$(python3 -c 'import json,sys; print(json.dumps({"username": sys.argv[1], "email": sys.argv[2], "password": sys.argv[3], "nickname": sys.argv[4]}))' "$SMOKE_USERNAME" "$SMOKE_EMAIL" "$SMOKE_PASSWORD" "$SMOKE_NICKNAME")"
 REGISTER_RESPONSE="$(curl -sS -X POST "$BASE_URL/auth/register" -H 'Content-Type: application/json' -d "$REGISTER_PAYLOAD")"
 
 if echo "$REGISTER_RESPONSE" | grep -Eq '"(username_exists|email_exists)"'; then
-  LOGIN_PAYLOAD='{"login":"admin_test","password":"test123456"}'
+  LOGIN_PAYLOAD="$(python3 -c 'import json,sys; print(json.dumps({"login": sys.argv[1], "password": sys.argv[2]}))' "$SMOKE_USERNAME" "$SMOKE_PASSWORD")"
   SESSION="$(curl -fsS -X POST "$BASE_URL/auth/login" -H 'Content-Type: application/json' -d "$LOGIN_PAYLOAD")"
 else
   SESSION="$REGISTER_RESPONSE"
@@ -53,7 +118,6 @@ curl -fsS "$BASE_URL/auth/me" -H "Authorization: Bearer $ACCESS_TOKEN"
 echo
 
 TMP_BOOK="$(mktemp "$TMP_DIR/book-reader-smoke.XXXXXX")"
-trap 'rm -f "$TMP_BOOK"' EXIT
 cat > "$TMP_BOOK" <<'BOOK'
 第一章 初见
 这是第一章的正文。
@@ -107,5 +171,8 @@ echo
 echo "cleanup bookshelf item:"
 curl -fsS -X DELETE "$BASE_URL/bookshelf/$BOOKSHELF_ID" -H "Authorization: Bearer $ACCESS_TOKEN"
 echo
+
+echo "cleanup smoke user:"
+cleanup_smoke_user
 
 echo "smoke ok"

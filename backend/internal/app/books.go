@@ -264,14 +264,16 @@ func (s *Server) bookshelfList(c *gin.Context) {
 		Title              string
 		Author             *string
 		Format             string
+		FilePath           string
 		CoverPath          *string
 		Visibility         string
 		LibraryStatus      *string
+		DeletedAt          *time.Time
 		ProgressPercentage *float64
 	}
 	var rows []row
 	order := bookshelfOrder(sortBy, orderBy)
-	err := q.Select("bs.*, b.id AS book_id2, b.title, b.author, b.format, b.cover_path, b.visibility, b.library_status, rp.percentage AS progress_percentage").
+	err := q.Select("bs.*, b.id AS book_id2, b.title, b.author, b.format, b.file_path, b.cover_path, b.visibility, b.library_status, b.deleted_at, rp.percentage AS progress_percentage").
 		Joins("LEFT JOIN reading_progress rp ON rp.user_id = bs.user_id AND rp.book_id = bs.book_id").
 		Order(order).Offset((page - 1) * size).Limit(size).Scan(&rows).Error
 	if err != nil {
@@ -280,7 +282,7 @@ func (s *Server) bookshelfList(c *gin.Context) {
 	}
 	out := make([]BookshelfItemDTO, 0, len(rows))
 	for _, r := range rows {
-		b := model.Book{ID: r.BookID2, Title: r.Title, Author: r.Author, Format: r.Format, CoverPath: r.CoverPath, Visibility: r.Visibility, LibraryStatus: r.LibraryStatus}
+		b := model.Book{ID: r.BookID2, Title: r.Title, Author: r.Author, Format: r.Format, FilePath: r.FilePath, CoverPath: r.CoverPath, Visibility: r.Visibility, LibraryStatus: r.LibraryStatus, DeletedAt: r.DeletedAt}
 		out = append(out, s.bookshelfDTO(r.Bookshelf, b, r.ProgressPercentage))
 	}
 	common.RespondPage(c, middleware.GetRequestID(c), out, page, size, total)

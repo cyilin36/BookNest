@@ -167,10 +167,11 @@ const isShelf = computed(() => props.mode === 'bookshelf' && 'source_type' in pr
 }
 
 .book-read-action:disabled {
-  --n-color-disabled: var(--color-primary) !important;
-  --n-border-disabled: 1px solid var(--color-primary) !important;
-  --n-text-color-disabled: #ffffff !important;
+  --n-color-disabled: #f3f4f6 !important;
+  --n-border-disabled: 1px solid #d1d5db !important;
+  --n-text-color-disabled: #9ca3af !important;
   --n-opacity-disabled: 1 !important;
   cursor: not-allowed;
 }
+
 </style>
