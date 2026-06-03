@@ -22,10 +22,12 @@ const { save, saveNow } = useReaderProgress(bookId)
 
 const activeChapter = computed(() => reader.chapters.find((chapter) => chapter.id === reader.activeChapterId) || null)
 const readableChapters = computed(() => reader.chapters.filter((chapter) => !chapter.is_volume))
+const bookFormatLabel = computed(() => reader.bookMeta?.format.toUpperCase() || '')
 const activeContent = ref<string>('')
 const activeContentType = ref<ReaderChapterContent['content_type']>('html')
 const readerTopRef = ref<HTMLElement | null>(null)
 const isRestoringPosition = ref(false)
+const ignoreNextScrollMenuClose = ref(false)
 const chapterItemRefs = new Map<number, HTMLElement>()
 
 interface SavedReaderPosition {
@@ -63,6 +65,25 @@ function nextChapter() {
 
 function openReaderMenu() {
   readerMenuOpen.value = true
+}
+
+function handleReaderTap(action: () => void) {
+  if (readerMenuOpen.value) {
+    readerMenuOpen.value = false
+    return
+  }
+  action()
+}
+
+async function runWithMenuKept(action: () => void | Promise<void>) {
+  ignoreNextScrollMenuClose.value = true
+  try {
+    await action()
+  } finally {
+    window.setTimeout(() => {
+      ignoreNextScrollMenuClose.value = false
+    }, 120)
+  }
 }
 
 function setChapterItemRef(chapterId: number, element: Element | null) {
@@ -184,6 +205,12 @@ function saveCurrentPosition(immediate = false) {
 }
 
 function handleReaderScroll() {
+  if (readerMenuOpen.value) {
+    if (ignoreNextScrollMenuClose.value) {
+      return
+    }
+    readerMenuOpen.value = false
+  }
   saveCurrentPosition()
 }
 
@@ -268,15 +295,21 @@ watch(
       </template>
       <div ref="readerTopRef" class="reader-topline surface">
         <div>{{ activeChapter?.title || '未选择章节' }}</div>
-        <div class="muted">{{ reader.progress?.progress_type || reader.bookMeta.format }}</div>
+        <div class="muted">{{ bookFormatLabel }}</div>
       </div>
       <section class="reader-panel surface">
         <div v-if="activeContent && activeContentType === 'html'" class="reader-content" v-html="activeContent" />
         <div v-else-if="activeContent" class="reader-content reader-content-text" v-text="activeContent" />
         <div v-if="activeContent" class="reader-tap-zones">
-          <button type="button" class="reader-tap-zone" aria-label="点击左侧切换上一章" :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="prevChapter()" />
-          <button type="button" class="reader-tap-zone" aria-label="点击中间打开阅读菜单" @click="openReaderMenu()" />
-          <button type="button" class="reader-tap-zone" aria-label="点击右侧切换下一章" :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="nextChapter()" />
+          <button type="button" class="reader-tap-zone" aria-label="点击左侧切换上一章" :disabled="chapterIndexById(reader.activeChapterId) <= 0 && !readerMenuOpen" @click="handleReaderTap(prevChapter)" />
+          <button type="button" class="reader-tap-zone" aria-label="点击中间打开或关闭阅读菜单" @click="handleReaderTap(openReaderMenu)" />
+          <button
+            type="button"
+            class="reader-tap-zone"
+            aria-label="点击右侧切换下一章"
+            :disabled="(chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1) && !readerMenuOpen"
+            @click="handleReaderTap(nextChapter)"
+          />
         </div>
         <EmptyState v-else title="暂无章节内容" description="后端未返回正文时可重试加载。">
           <n-button secondary @click="reader.loadChapters(bookId)">重试</n-button>
@@ -343,29 +376,29 @@ watch(
     </n-drawer-content>
   </n-drawer>
 
-  <n-modal v-model:show="readerMenuOpen">
-    <section class="reader-menu surface">
+  <Transition name="reader-menu-slide">
+    <section v-if="readerMenuOpen" class="reader-menu surface">
       <div class="reader-menu-title">{{ activeChapter?.title || reader.bookMeta?.title || '阅读菜单' }}</div>
       <div class="reader-menu-actions">
-        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="readerMenuOpen = false; prevChapter()">
+        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="runWithMenuKept(prevChapter)">
           <template #icon><ChevronLeft :size="16" /></template>
           上一章
         </n-button>
-        <n-button secondary @click="readerMenuOpen = false; openChapterDrawer()">
-          <template #icon><List :size="16" /></template>
-          目录
-        </n-button>
-        <n-button secondary @click="readerMenuOpen = false; settingsDrawer = true">
-          <template #icon><Settings2 :size="16" /></template>
-          设置
-        </n-button>
-        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="readerMenuOpen = false; nextChapter()">
+        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="runWithMenuKept(nextChapter)">
           <template #icon><ChevronRight :size="16" /></template>
           下一章
         </n-button>
+        <n-button secondary @click="openChapterDrawer()">
+          <template #icon><List :size="16" /></template>
+          目录
+        </n-button>
+        <n-button secondary @click="settingsDrawer = true">
+          <template #icon><Settings2 :size="16" /></template>
+          设置
+        </n-button>
       </div>
     </section>
-  </n-modal>
+  </Transition>
 </template>
 
 <style scoped>
@@ -415,8 +448,16 @@ watch(
 }
 
 .reader-menu {
-  width: min(520px, calc(100vw - 32px));
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: max(16px, env(safe-area-inset-left));
+  z-index: 20;
+  width: min(560px, calc(100vw - 32px));
+  margin: 0 auto;
   padding: 16px;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
 }
 
 .reader-menu-title {
@@ -431,6 +472,19 @@ watch(
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.reader-menu-slide-enter-active,
+.reader-menu-slide-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.reader-menu-slide-enter-from,
+.reader-menu-slide-leave-to {
+  opacity: 0;
+  transform: translateY(18px);
 }
 
 .chapter-list {
