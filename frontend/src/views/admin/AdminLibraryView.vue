@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useDialog, useMessage } from 'naive-ui'
+import { Search } from 'lucide-vue-next'
 import PageShell from '@/components/common/PageShell.vue'
 import PaginationBar from '@/components/common/PaginationBar.vue'
 import { adminApi } from '@/api/admin'
@@ -11,6 +12,7 @@ const message = useMessage()
 const dialog = useDialog()
 const books = ref<LibraryBook[]>([])
 const loading = ref(false)
+const filterDrawer = ref(false)
 const pagination = ref<Pagination>({ page: 1, page_size: 20, total: 0 })
 const filters = reactive({
   keyword: '',
@@ -34,20 +36,14 @@ const formatOptions = [
   { label: 'TXT', value: 'txt' }
 ]
 
-const transitionOptions: Record<LibraryStatus, { label: string; value: LibraryStatus }[]> = {
+const transitionOptions: Record<LibraryStatus, { label: string; status: LibraryStatus }[]> = {
   pending: [
-    { label: '通过', value: 'approved' },
-    { label: '拒绝', value: 'rejected' }
+    { label: '通过', status: 'approved' },
+    { label: '拒绝', status: 'rejected' }
   ],
-  approved: [
-    { label: '隐藏', value: 'hidden' },
-    { label: '删除', value: 'deleted' }
-  ],
-  hidden: [
-    { label: '恢复通过', value: 'approved' },
-    { label: '删除', value: 'deleted' }
-  ],
-  rejected: [{ label: '删除', value: 'deleted' }],
+  approved: [{ label: '隐藏', status: 'hidden' }],
+  hidden: [{ label: '恢复', status: 'approved' }],
+  rejected: [],
   deleted: []
 }
 
@@ -65,6 +61,7 @@ async function fetchBooks(page = 1) {
     pagination.value = result.pagination
   } finally {
     loading.value = false
+    filterDrawer.value = false
   }
 }
 
@@ -95,21 +92,35 @@ function confirmDelete(book: LibraryBook) {
   })
 }
 
-function onLibraryStatusSelect(book: LibraryBook, value: LibraryStatus) {
-  changeStatus(book, value)
-}
-
 onMounted(() => fetchBooks())
 </script>
 
 <template>
   <PageShell title="公共图书审核" subtitle="管理公共图书的状态和删除">
-    <div class="surface filter-bar">
-      <n-input v-model:value="filters.keyword" clearable placeholder="搜索书名或作者" @keyup.enter="fetchBooks(1)" />
-      <n-select v-model:value="filters.status" :options="statusOptions" />
-      <n-select v-model:value="filters.format" :options="formatOptions" />
-      <n-button type="primary" secondary @click="fetchBooks(1)">筛选</n-button>
-    </div>
+    <template #actions>
+      <n-tooltip trigger="hover">
+        <template #trigger>
+          <n-button secondary circle title="搜索和筛选" @click="filterDrawer = true">
+            <Search :size="18" />
+          </n-button>
+        </template>
+        搜索和筛选
+      </n-tooltip>
+    </template>
+    <n-drawer v-model:show="filterDrawer" placement="right" :width="320">
+      <n-drawer-content title="搜索和筛选">
+        <div class="filter-drawer-body">
+          <n-input v-model:value="filters.keyword" clearable placeholder="搜索书名或作者" @keyup.enter="fetchBooks(1)">
+            <template #prefix><Search :size="16" /></template>
+          </n-input>
+          <n-select v-model:value="filters.status" :options="statusOptions" />
+          <n-select v-model:value="filters.format" :options="formatOptions" />
+        </div>
+        <template #footer>
+          <n-button block type="primary" @click="fetchBooks(1)">筛选</n-button>
+        </template>
+      </n-drawer-content>
+    </n-drawer>
     <n-spin :show="loading">
       <div class="surface table">
         <div class="row header">
@@ -131,15 +142,16 @@ onMounted(() => fetchBooks())
           <span>{{ book.owner_username || book.owner_user_id }}</span>
           <span>{{ formatBytes(book.file_size) }}</span>
           <span>{{ formatDate(book.created_at) }}</span>
-          <div class="toolbar">
-            <n-dropdown
-              v-if="transitionOptions[book.library_status].length"
-              trigger="click"
-              :options="transitionOptions[book.library_status]"
-              @select="(value: LibraryStatus) => onLibraryStatusSelect(book, value)"
+          <div class="toolbar action-buttons">
+            <n-button
+              v-for="option in transitionOptions[book.library_status]"
+              :key="option.status"
+              size="small"
+              secondary
+              @click="changeStatus(book, option.status)"
             >
-              <n-button size="small" secondary>改状态</n-button>
-            </n-dropdown>
+              {{ option.label }}
+            </n-button>
             <n-button size="small" quaternary type="error" :disabled="book.library_status === 'deleted'" @click="confirmDelete(book)">删除</n-button>
           </div>
         </div>
@@ -150,11 +162,9 @@ onMounted(() => fetchBooks())
 </template>
 
 <style scoped>
-.filter-bar {
+.filter-drawer-body {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 150px 140px auto;
   gap: 10px;
-  padding: 12px;
 }
 
 .table {
@@ -177,6 +187,10 @@ onMounted(() => fetchBooks())
   font-size: 13px;
 }
 
+.row.header strong:last-child {
+  text-align: center;
+}
+
 .row div {
   min-width: 0;
 }
@@ -190,9 +204,9 @@ onMounted(() => fetchBooks())
   white-space: nowrap;
 }
 
-@media (max-width: 760px) {
-  .filter-bar {
-    grid-template-columns: 1fr;
-  }
+.action-buttons {
+  justify-content: center;
+  flex-wrap: nowrap;
 }
+
 </style>

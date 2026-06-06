@@ -13,7 +13,7 @@ const mobileOpen = ref(false)
 
 const navItems = computed(() => [
   { path: '/bookshelf', label: '我的书架', icon: BookOpen },
-  { path: '/library', label: '公共馆', icon: Library },
+  { path: '/library', label: '图书馆', icon: Library },
   { path: '/upload', label: '上传', icon: Upload },
   { path: '/settings', label: '设置', icon: Settings },
   ...(auth.isAdmin ? [{ path: '/admin', label: '管理', icon: Shield }] : [])

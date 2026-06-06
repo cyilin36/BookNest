@@ -78,7 +78,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageShell title="我的书架" subtitle="管理个人上传和从公共图书馆引入的图书">
+  <PageShell class="bookshelf-page" title="我的书架">
     <template #actions>
       <n-tooltip trigger="hover">
         <template #trigger>
@@ -87,6 +87,14 @@ onMounted(() => {
           </n-button>
         </template>
         搜索和筛选
+      </n-tooltip>
+      <n-tooltip trigger="hover">
+        <template #trigger>
+          <n-button secondary circle title="上传图书" @click="router.push('/upload')">
+            <Plus :size="18" />
+          </n-button>
+        </template>
+        上传图书
       </n-tooltip>
     </template>
     <n-drawer v-model:show="filterDrawer" placement="right" :width="320">
@@ -119,9 +127,6 @@ onMounted(() => {
           @toggle-pinned="store.updateBookshelfItem(book.id, { pinned: !book.pinned })"
           @remove="confirmRemove(book.id)"
         />
-        <button class="upload-book-card surface" type="button" aria-label="上传图书" @click="router.push('/upload')">
-          <Plus :size="42" stroke-width="1.8" />
-        </button>
       </div>
     </n-spin>
     <PaginationBar :pagination="store.pagination" @change="fetchPage" />
@@ -134,23 +139,14 @@ onMounted(() => {
   gap: 12px;
 }
 
-.upload-book-card {
-  display: grid;
-  min-height: 214px;
-  place-items: center;
-  padding: 12px;
-  color: var(--color-primary);
-  background: var(--color-bg-card);
-  cursor: pointer;
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease;
-}
+@media (max-width: 720px) {
+  .bookshelf-page :deep(.page-header) {
+    flex-direction: row;
+    align-items: center;
+  }
 
-.upload-book-card:hover {
-  border-color: var(--color-primary);
-  box-shadow: inset 0 0 0 1px var(--color-primary);
-  transform: translateY(-1px);
+  .bookshelf-page :deep(.toolbar) {
+    margin-left: auto;
+  }
 }
 </style>

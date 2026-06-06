@@ -3,13 +3,37 @@ import { reactive } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useRouter, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { AppAPIError } from '@/api/client'
 
 const auth = useAuthStore()
 const router = useRouter()
 const message = useMessage()
 const form = reactive({ username: '', email: '', nickname: '', password: '' })
 
+function showRegisterError(error: unknown) {
+  if (error instanceof AppAPIError) {
+    if (error.code === 'username_exists') {
+      message.warning('用户名已存在')
+      return
+    }
+    if (error.code === 'email_exists') {
+      message.warning('邮箱已存在')
+      return
+    }
+    if (error.code === 'validation_failed') {
+      message.warning(error.message || '注册信息不符合要求')
+      return
+    }
+  }
+  message.error(error instanceof Error ? error.message : '注册失败')
+}
+
 async function submit() {
+  if (form.password.length < 6) {
+    message.warning('密码至少 6 位')
+    return
+  }
+
   try {
     await auth.register({
       username: form.username,
@@ -20,7 +44,7 @@ async function submit() {
     message.success('注册成功')
     router.push('/bookshelf')
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '注册失败')
+    showRegisterError(error)
   }
 }
 </script>
