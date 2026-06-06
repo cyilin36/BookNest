@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { useMessage } from 'naive-ui'
+import { useDialog, useMessage } from 'naive-ui'
 import PageShell from '@/components/common/PageShell.vue'
 import PaginationBar from '@/components/common/PaginationBar.vue'
 import { userApi } from '@/api/user'
@@ -8,8 +8,10 @@ import type { Pagination, User, UserRole, UserStatus } from '@/api/types'
 import { formatBytes, formatDate } from '@/utils/format'
 
 const message = useMessage()
+const dialog = useDialog()
 const users = ref<User[]>([])
 const loading = ref(false)
+const deletingUserId = ref<number | null>(null)
 const pagination = ref<Pagination>({ page: 1, page_size: 20, total: 0 })
 const filters = reactive({
   keyword: '',
@@ -64,6 +66,27 @@ async function changeStatus(user: User, status: UserStatus) {
   }
 }
 
+function confirmDeleteUser(user: User) {
+  dialog.error({
+    title: '删除用户账号',
+    content: `确定删除普通用户「${user.username}」吗？该操作会清空该账号、图书、书架、阅读进度、书签等所有个人数据，删除后无法恢复。`,
+    positiveText: '删除账号',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      deletingUserId.value = user.id
+      try {
+        await userApi.remove(user.id)
+        message.success('用户已删除')
+        await fetchUsers(pagination.value.page)
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '删除失败')
+      } finally {
+        deletingUserId.value = null
+      }
+    }
+  })
+}
+
 function onRoleSelect(user: User, value: UserRole) {
   changeRole(user, value)
 }
@@ -91,6 +114,7 @@ onMounted(() => fetchUsers())
           <strong>状态</strong>
           <strong>存储</strong>
           <strong>最后登录</strong>
+          <strong>操作</strong>
         </div>
         <div v-for="user in users" :key="user.id" class="row">
           <div>
@@ -111,6 +135,17 @@ onMounted(() => fetchUsers())
           />
           <span>{{ formatBytes(user.storage_used_bytes) }}</span>
           <span>{{ formatDate(user.last_login_at) }}</span>
+          <n-button
+            v-if="user.role === 'user'"
+            size="small"
+            type="error"
+            secondary
+            :loading="deletingUserId === user.id"
+            @click="confirmDeleteUser(user)"
+          >
+            删除
+          </n-button>
+          <span v-else class="muted">-</span>
         </div>
       </div>
     </n-spin>
@@ -134,7 +169,7 @@ onMounted(() => fetchUsers())
 
 .row {
   display: grid;
-  grid-template-columns: minmax(180px, 2fr) 130px 130px 110px 160px;
+  grid-template-columns: minmax(180px, 2fr) 130px 130px 110px 160px 88px;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;

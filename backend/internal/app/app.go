@@ -102,6 +102,7 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	admin.PATCH("/users/:id", s.adminUpdateUser)
 	admin.PATCH("/users/:id/status", s.adminUpdateUserStatus)
 	admin.PATCH("/users/:id/role", s.adminUpdateUserRole)
+	admin.DELETE("/users/:id", s.adminDeleteUser)
 	admin.GET("/library/books", s.adminLibraryList)
 	admin.PATCH("/library/books/:id/status", s.adminUpdateLibraryStatus)
 	admin.DELETE("/library/books/:id", s.adminDeleteLibraryBook)

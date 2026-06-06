@@ -765,6 +765,7 @@ GET   /api/v1/admin/users/:id
 PATCH /api/v1/admin/users/:id
 PATCH /api/v1/admin/users/:id/status
 PATCH /api/v1/admin/users/:id/role
+DELETE /api/v1/admin/users/:id
 ```
 
 规则：
@@ -774,7 +775,9 @@ PATCH /api/v1/admin/users/:id/role
 - 修改密码后撤销该用户全部 refresh token。
 - 管理员不能禁用自己。
 - 第一期开发表现直接禁止管理员修改自己的角色。
+- 管理员不能删除自己。
 - 禁用用户时撤销该用户全部 refresh token。
+- 删除用户时清除该用户账号、refresh token、书架、阅读进度、书签、拥有图书及图书文件/封面文件；若该用户拥有公共图书，同时清除其他用户引用这些图书产生的书架项、阅读进度和书签。
 - `/users/me` 返回当前用户基础信息时必须包含 `storage_quota_bytes` 和 `storage_used_bytes`。
 - `storage_used_bytes` 第一版按当前用户私有上传且未软删除的 `books.file_size` 汇总，不包含引自公共图书馆的引用。
 
@@ -1519,10 +1522,12 @@ PUT /api/v1/admin/system/settings
 /api/v1/books/:bookId/bookmarks
 /api/v1/bookmarks/:id
 
-/api/v1/admin/users
-/api/v1/admin/users/:id
-/api/v1/admin/users/:id/status
-/api/v1/admin/users/:id/role
+GET /api/v1/admin/users
+GET /api/v1/admin/users/:id
+PATCH /api/v1/admin/users/:id
+PATCH /api/v1/admin/users/:id/status
+PATCH /api/v1/admin/users/:id/role
+DELETE /api/v1/admin/users/:id
 /api/v1/admin/library/books
 /api/v1/admin/library/books/:id/status
 /api/v1/admin/library/books/:id

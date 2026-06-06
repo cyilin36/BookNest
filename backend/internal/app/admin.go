@@ -229,6 +229,113 @@ func (s *Server) adminUpdateUserRole(c *gin.Context) {
 	common.RespondJSON(c, middleware.GetRequestID(c), u)
 }
 
+func (s *Server) adminDeleteUser(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	if id == middleware.CurrentUser(c).ID {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrForbidden)
+		return
+	}
+	var target model.User
+	if err := s.db.First(&target, "id = ?", id).Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+	var ownedBooks []model.Book
+	if err := s.db.Find(&ownedBooks, "owner_user_id = ?", id).Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	for _, book := range ownedBooks {
+		if err := s.removeBookFiles(book); err != nil && !os.IsNotExist(err) {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+	}
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		ownedBookIDs := make([]int64, 0, len(ownedBooks))
+		for _, book := range ownedBooks {
+			ownedBookIDs = append(ownedBookIDs, book.ID)
+		}
+		shelfIDs, err := userDeletionBookshelfIDs(tx, id, ownedBookIDs)
+		if err != nil {
+			return err
+		}
+		if len(shelfIDs) > 0 {
+			if err := tx.Where("bookshelf_id IN ?", shelfIDs).Delete(&model.BookshelfTag{}).Error; err != nil {
+				return err
+			}
+		}
+		bookmarkQuery := tx.Where("user_id = ?", id)
+		progressQuery := tx.Where("user_id = ?", id)
+		if len(ownedBookIDs) > 0 {
+			bookmarkQuery = bookmarkQuery.Or("book_id IN ?", ownedBookIDs)
+			progressQuery = progressQuery.Or("book_id IN ?", ownedBookIDs)
+		}
+		if len(shelfIDs) > 0 {
+			bookmarkQuery = bookmarkQuery.Or("bookshelf_id IN ?", shelfIDs)
+			progressQuery = progressQuery.Or("bookshelf_id IN ?", shelfIDs)
+		}
+		if err := bookmarkQuery.Delete(&model.Bookmark{}).Error; err != nil {
+			return err
+		}
+		if err := progressQuery.Delete(&model.ReadingProgress{}).Error; err != nil {
+			return err
+		}
+		shelfQuery := tx.Where("user_id = ?", id)
+		if len(ownedBookIDs) > 0 {
+			shelfQuery = shelfQuery.Or("book_id IN ?", ownedBookIDs)
+		}
+		if err := shelfQuery.Delete(&model.Bookshelf{}).Error; err != nil {
+			return err
+		}
+		if len(ownedBookIDs) > 0 {
+			if err := tx.Where("book_id IN ?", ownedBookIDs).Delete(&model.BookCategory{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("book_id IN ?", ownedBookIDs).Delete(&model.BookTag{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("book_id IN ?", ownedBookIDs).Delete(&model.BookChapter{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id IN ?", ownedBookIDs).Delete(&model.Book{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("user_id = ?", id).Delete(&model.RefreshToken{}).Error; err != nil {
+			return err
+		}
+		res := tx.Delete(&model.User{}, id)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return common.ErrNotFound
+		}
+		return nil
+	})
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{})
+}
+
+func userDeletionBookshelfIDs(tx *gorm.DB, userID int64, ownedBookIDs []int64) ([]int64, error) {
+	q := tx.Model(&model.Bookshelf{}).Where("user_id = ?", userID)
+	if len(ownedBookIDs) > 0 {
+		q = q.Or("book_id IN ?", ownedBookIDs)
+	}
+	var ids []int64
+	if err := q.Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 func (s *Server) adminUpdateLibraryStatus(c *gin.Context) {
 	id, ok := parseID(c, "id")
 	if !ok {

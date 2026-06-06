@@ -24,5 +24,8 @@ export const userApi = {
   },
   updateRole(id: number, role: 'admin' | 'user') {
     return unwrap<User>(apiClient.patch(`/admin/users/${id}/role`, { role }))
+  },
+  remove(id: number) {
+    return unwrap<Record<string, never>>(apiClient.delete(`/admin/users/${id}`))
   }
 }
