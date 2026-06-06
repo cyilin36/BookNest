@@ -163,7 +163,7 @@ async function logout() {
   border-bottom: 1px solid var(--color-border);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
   .sidebar {
     display: none;
   }
@@ -172,6 +172,12 @@ async function logout() {
     display: flex;
   }
 
+  .content {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 720px) {
   .content {
     padding: 16px;
   }

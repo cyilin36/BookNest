@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { onMounted, reactive } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useDialog, useMessage } from 'naive-ui'
 import { useRouter, useRoute } from 'vue-router'
-import { Search, Upload } from 'lucide-vue-next'
+import { Plus, Search } from 'lucide-vue-next'
 import PageShell from '@/components/common/PageShell.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
 import PaginationBar from '@/components/common/PaginationBar.vue'
 import BookCard from '@/components/book/BookCard.vue'
 import { useTaxonomyOptions } from '@/composables/useTaxonomyOptions'
@@ -17,6 +16,7 @@ const route = useRoute()
 const message = useMessage()
 const dialog = useDialog()
 const { categoryOptions, tagOptions } = useTaxonomyOptions()
+const filterDrawer = ref(false)
 const filters = reactive({
   keyword: '',
   format: null as BookFormat | null,
@@ -55,6 +55,7 @@ async function fetchPage(page = 1) {
     tag_id: filters.tag_id || undefined,
     favorite: filters.favorite === null ? undefined : filters.favorite
   })
+  filterDrawer.value = false
 }
 
 function confirmRemove(id: number) {
@@ -79,27 +80,34 @@ onMounted(() => {
 <template>
   <PageShell title="我的书架" subtitle="管理个人上传和从公共图书馆引入的图书">
     <template #actions>
-      <n-button type="primary" @click="router.push('/upload')">
-        <template #icon><Upload :size="16" /></template>
-        上传图书
-      </n-button>
+      <n-tooltip trigger="hover">
+        <template #trigger>
+          <n-button secondary circle title="搜索和筛选" @click="filterDrawer = true">
+            <Search :size="18" />
+          </n-button>
+        </template>
+        搜索和筛选
+      </n-tooltip>
     </template>
-    <div class="surface filter-bar">
-      <n-input v-model:value="filters.keyword" clearable placeholder="搜索书名、作者" @keyup.enter="fetchPage(1)">
-        <template #prefix><Search :size="16" /></template>
-      </n-input>
-      <n-select v-model:value="filters.format" :options="formatOptions" />
-      <n-select v-model:value="filters.source_type" :options="sourceOptions" />
-      <n-select v-model:value="filters.category_id" clearable :options="categoryOptions" placeholder="分类" />
-      <n-select v-model:value="filters.tag_id" clearable :options="tagOptions" placeholder="标签" />
-      <n-select v-model:value="filters.favorite" :options="favoriteOptions" placeholder="收藏" />
-      <n-button type="primary" secondary @click="fetchPage(1)">筛选</n-button>
-    </div>
+    <n-drawer v-model:show="filterDrawer" placement="right" :width="320">
+      <n-drawer-content title="搜索和筛选">
+        <div class="filter-drawer-body">
+          <n-input v-model:value="filters.keyword" clearable placeholder="搜索书名、作者" @keyup.enter="fetchPage(1)">
+            <template #prefix><Search :size="16" /></template>
+          </n-input>
+          <n-select v-model:value="filters.format" :options="formatOptions" />
+          <n-select v-model:value="filters.source_type" :options="sourceOptions" />
+          <n-select v-model:value="filters.category_id" clearable :options="categoryOptions" placeholder="分类" />
+          <n-select v-model:value="filters.tag_id" clearable :options="tagOptions" placeholder="标签" />
+          <n-select v-model:value="filters.favorite" :options="favoriteOptions" placeholder="收藏" />
+        </div>
+        <template #footer>
+          <n-button block type="primary" @click="fetchPage(1)">筛选</n-button>
+        </template>
+      </n-drawer-content>
+    </n-drawer>
     <n-spin :show="store.loading">
-      <EmptyState v-if="!store.items.length && !store.loading" title="书架还是空的" description="上传一本私有图书，或者从公共图书馆加入一本。">
-        <n-button type="primary" @click="router.push('/upload')">去上传</n-button>
-      </EmptyState>
-      <div v-else class="grid-books">
+      <div v-if="!store.loading" class="grid-books">
         <BookCard
           v-for="book in store.items"
           :key="book.id"
@@ -111,6 +119,9 @@ onMounted(() => {
           @toggle-pinned="store.updateBookshelfItem(book.id, { pinned: !book.pinned })"
           @remove="confirmRemove(book.id)"
         />
+        <button class="upload-book-card surface" type="button" aria-label="上传图书" @click="router.push('/upload')">
+          <Plus :size="42" stroke-width="1.8" />
+        </button>
       </div>
     </n-spin>
     <PaginationBar :pagination="store.pagination" @change="fetchPage" />
@@ -118,17 +129,28 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.filter-bar {
+.filter-drawer-body {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 120px 150px 140px 140px auto auto;
-  gap: 10px;
-  align-items: center;
-  padding: 12px;
+  gap: 12px;
 }
 
-@media (max-width: 820px) {
-  .filter-bar {
-    grid-template-columns: 1fr;
-  }
+.upload-book-card {
+  display: grid;
+  min-height: 214px;
+  place-items: center;
+  padding: 12px;
+  color: var(--color-primary);
+  background: var(--color-bg-card);
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.upload-book-card:hover {
+  border-color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+  transform: translateY(-1px);
 }
 </style>
