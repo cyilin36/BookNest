@@ -1,11 +1,13 @@
 import { apiClient, unwrap, unwrapPage } from './client'
-import type { AdminStorageStats, LibraryStatus, PageQuery, SystemSettings } from './types'
+import type { AdminStorageStats, BookFormat, LibraryStatus, PageQuery, SystemSettings } from './types'
 import type { LibraryBook } from './types'
+
+export type AdminLibraryEditableStatus = Extract<LibraryStatus, 'approved' | 'hidden'>
 
 export interface AdminLibraryQuery extends PageQuery {
   status?: LibraryStatus
   mine?: boolean
-  format?: 'epub' | 'pdf' | 'txt'
+  format?: BookFormat
   category_id?: number
   tag_id?: number
 }
@@ -14,11 +16,11 @@ export const adminApi = {
   library(query: AdminLibraryQuery = {}) {
     return unwrapPage<LibraryBook>(apiClient.get('/admin/library/books', { params: query }))
   },
-  updateLibraryStatus(id: number, payload: { status: string; reason?: string | null }) {
+  updateLibraryStatus(id: number, payload: { status: AdminLibraryEditableStatus; reason?: string | null }) {
     return unwrap<LibraryBook>(apiClient.patch(`/admin/library/books/${id}/status`, payload))
   },
-  deleteLibraryBook(id: number, deleteFile = false) {
-    return unwrap<Record<string, never>>(apiClient.delete(`/admin/library/books/${id}`, { params: { delete_file: deleteFile } }))
+  deleteLibraryBook(id: number) {
+    return unwrap<Record<string, never>>(apiClient.delete(`/admin/library/books/${id}`))
   },
   storage() {
     return unwrap<AdminStorageStats>(apiClient.get('/admin/system/storage'))

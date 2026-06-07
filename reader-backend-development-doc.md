@@ -16,7 +16,7 @@
 
 - 多用户注册、登录、退出、刷新登录状态。
 - 第一个注册用户自动成为管理员。
-- 管理员可以禁用用户、调整角色、审核和管理公共图书。
+- 管理员可以禁用用户、调整角色、上下架和物理删除公共图书。
 - 用户可以上传私有图书到自己的书架。
 - 用户可以上传公共图书到公共图书馆。
 - 其他用户将公共图书加入书架时只建立引用，不复制文件。
@@ -191,7 +191,7 @@ LOG_LEVEL=info
 - `REQUEST_BODY_LIMIT_MB` 必须大于或等于 `MAX_UPLOAD_SIZE_MB`。
 - `ALLOW_REGISTRATION=false` 时，系统已有用户后拒绝新注册。
 - 系统没有任何用户时，仍允许创建第一个管理员，避免初始化死锁。
-- `LIBRARY_REVIEW_REQUIRED=true` 时，普通用户上传公共图书默认 `pending`。
+- `LIBRARY_REVIEW_REQUIRED` 保留为兼容配置，当前不再影响公共图书状态；普通用户上传公共图书默认 `approved`。
 
 ## 5. HTTP 统一约定
 
@@ -271,6 +271,7 @@ book_not_found
 book_already_in_bookshelf
 book_format_not_supported
 book_file_missing
+book_file_delete_failed
 library_book_not_approved
 library_review_required
 category_not_found
@@ -394,7 +395,7 @@ CREATE TABLE books (
   CONSTRAINT chk_books_format CHECK (format IN ('epub', 'pdf', 'txt')),
   CONSTRAINT chk_books_visibility CHECK (visibility IN ('private', 'public')),
   CONSTRAINT chk_books_library_status CHECK (
-    library_status IS NULL OR library_status IN ('pending', 'approved', 'rejected', 'hidden', 'deleted')
+    library_status IS NULL OR library_status IN ('approved', 'hidden', 'deleted')
   ),
   CONSTRAINT chk_books_parse_status CHECK (parse_status IN ('parsed', 'partial', 'failed'))
 );
@@ -410,9 +411,9 @@ CREATE INDEX idx_books_deleted_at ON books(deleted_at);
 
 - 私有图书：`visibility='private'`，`library_status=NULL`。
 - 公共图书：`visibility='public'`。
-- 公共图书无需审核时：`library_status='approved'`。
-- 公共图书需要审核时：`library_status='pending'`。
-- `pending` 表示待管理员审核，不表示上传中。
+- 公共图书上传成功后默认 `library_status='approved'`，表示已上架，可在图书馆展示、加入书架和阅读。
+- `hidden` 表示已下架，不在公共图书馆普通列表展示，不能新加入书架；已有书架引用保留但不可阅读。
+- `deleted` 只作为管理员物理删除流程中的内部标记；删除完成后图书记录、相关索引和物理文件都应被清理。
 - `file_path` 和 `cover_path` 保存相对路径，不保存 `/data` 绝对路径。
 - 上传成功后文件必须已经落盘。
 
@@ -636,9 +637,7 @@ BookFormatEPUB=epub
 BookFormatPDF=pdf
 BookFormatTXT=txt
 
-LibraryStatusPending=pending
 LibraryStatusApproved=approved
-LibraryStatusRejected=rejected
 LibraryStatusHidden=hidden
 LibraryStatusDeleted=deleted
 
@@ -1156,8 +1155,7 @@ pinned desc, last_read_at desc nulls last, added_at desc
 
 - `readable=true` 时为空。
 - 公共图书被隐藏时为 `library_hidden`。
-- 公共图书被删除或软删除时为 `library_deleted`。
-- 公共图书被拒绝时为 `library_rejected`。
+- 公共图书处于删除流程或被标记删除时为 `library_deleted`。
 - 图书文件丢失时为 `file_missing`。
 - 其他权限变化导致不可读时为 `permission_denied`。
 
@@ -1171,9 +1169,10 @@ pinned desc, last_read_at desc nulls last, added_at desc
 
 删除规则：
 
-- 私有上传图书：删除书架记录，软删除 `books`，物理删除真实文件和封面。
+- 私有上传图书：先写入 `books.deleted_at` 删除标记，再物理删除真实文件和封面，最后删除该书的书架记录、书架标签、阅读进度、书签、章节和 `books` 图书记录。
 - 公共图书：只删除当前用户书架记录，不删除 `books` 和真实文件。
-- 私有文件物理删除失败时，不提交数据库删除状态。
+- 私有图书删除成功后，数据库不再保留该图书条目和相关个人数据，效果等同从未添加过该图书。
+- 私有文件物理删除失败时，撤销 `books.deleted_at` 删除标记，并返回 `book_file_delete_failed`，前端应提示用户稍后重试。
 
 ### 13.3 从公共图书加入书架
 
@@ -1201,9 +1200,11 @@ POST /api/v1/library/books/:id/add-to-bookshelf
 GET  /api/v1/library/books
 GET  /api/v1/library/books/:id
 POST /api/v1/library/books/upload
+POST /api/v1/library/books/:id/hide
+POST /api/v1/library/books/:id/show
 ```
 
-普通用户只能看到：
+普通用户默认只能看到：
 
 - `visibility='public'`
 - `library_status='approved'`
@@ -1211,10 +1212,12 @@ POST /api/v1/library/books/upload
 
 例外：
 
-- `GET /api/v1/library/books/:id` 允许上传者查看自己上传的 `pending` 公共图书。
+- `GET /api/v1/library/books/:id` 允许上传者查看自己上传的 `approved` 或 `hidden` 公共图书。
 - `GET /api/v1/library/books` 默认只返回 `approved` 公共图书。
-- 若需要让上传者在列表中查看自己的待审核公共图书，使用 `mine=true&status=pending` 查询；该查询只返回当前用户自己上传的 pending 图书。
-- 其他普通用户不可查看非本人上传的 pending、rejected、hidden、deleted 公共图书。
+- 上传者可通过 `mine=true&status=approved|hidden` 查询自己上传的公共图书。
+- 其他普通用户不可查看非本人上传的 `hidden` 公共图书。
+- `deleted` 不对普通用户查询开放。
+- 管理员物理删除后的公共图书已经删除 `books` 记录，不会出现在上传者的 `mine=true` 列表中，效果等同从未上传过该书。
 
 列表支持：
 
@@ -1223,6 +1226,8 @@ keyword
 format
 category_id
 tag_id
+mine=true|false
+status=approved|hidden
 page
 page_size
 sort=created_at|title
@@ -1238,17 +1243,27 @@ order=asc|desc
 
 - `books.visibility='public'`
 - `books.owner_user_id=current_user_id`
-- 审核开启时 `library_status='pending'`。
-- 审核关闭时 `library_status='approved'`。
+- `books.library_status='approved'`
 - 文件路径：`books/public/{book_id}.{ext}`。
 - 不自动给上传者创建书架记录。
 
-`pending` 特殊规则：
+下架自己上传的公共图书：
 
-- 上传者可以查看和读取自己上传的 pending 公共图书，用于确认内容。
-- 上传者可通过详情接口查看自己的 pending 图书，也可通过 `mine=true&status=pending` 在列表中查看。
-- 其他普通用户不可见不可读。
-- 管理员可见并可审核。
+- 只能由上传者调用。
+- 只把 `library_status` 更新为 `hidden`，不写 `deleted_at`。
+- 不删除图书文件、封面、书架引用、阅读进度或书签。
+- 已加入他人书架的引用保留，仍可在书架展示，但 `readable=false` 且 `unreadable_reason='library_hidden'`。
+- 已下架图书不能被新增加入书架，也不能继续阅读。
+
+重新上架自己上传的公共图书：
+
+- 只能由上传者调用。
+- 图书必须是 `visibility='public'`、`owner_user_id=current_user_id`、`deleted_at IS NULL`。
+- 只允许 `library_status='hidden'` 的图书重新上架。
+- 只把 `library_status` 更新为 `approved`，并更新 `updated_at`。
+- 不删除或修改图书文件、封面、书架引用、阅读进度或书签。
+- `approved`、`deleted` 或其他状态不允许通过该接口恢复。
+- 管理员物理删除后的公共图书不存在数据库记录，不能被重新上架。
 
 ### 14.2 管理员接口
 
@@ -1261,22 +1276,17 @@ DELETE /api/v1/admin/library/books/:id
 状态流转：
 
 ```text
-pending -> approved
-pending -> rejected
 approved -> hidden
 hidden -> approved
-approved -> deleted
-hidden -> deleted
-rejected -> deleted
 ```
 
 规则：
 
-- `rejected` 表示审核拒绝，普通用户不可见。
-- `hidden` 表示下架，普通用户不可见，已有书架记录不可读。
-- `deleted` 表示软删除，普通用户不可见，默认不返回。
-- `DELETE` 默认软删除。
-- `DELETE ?delete_file=true` 支持物理删除文件，并同步移除或标记相关书架引用不可用。
+- `PATCH /status` 只负责上架/下架，不接受 `deleted`。
+- `hidden` 表示下架，普通用户公共列表不可见，已有书架记录不可读。
+- `deleted` 只由 `DELETE` 删除流程内部写入，作为物理删除中的标记。
+- `DELETE` 是真正删除：先标记 `library_status='deleted'` 和 `deleted_at`，再删除图书文件和封面，最后清理数据库中的图书记录、章节、分类/标签关联、书架引用、阅读进度和书签。
+- 删除完成后，数据库不再保留该公共图书索引记录，物理文件也应被删除。
 
 ## 15. 阅读模块
 
@@ -1287,9 +1297,8 @@ rejected -> deleted
 - 管理员可以读取所有未物理丢失的图书。
 - 私有图书：当前用户存在该书 `bookshelves` 记录。
 - 公共图书：当前用户已登录，且 `library_status='approved'`。
-- 公共图书上传者可读取自己上传的 `pending` 图书。
 
-公共图书 `hidden`、`deleted`、`rejected`、非上传者的 `pending` 均不可读。
+公共图书 `hidden` 和 `deleted` 均不可读。
 
 ### 15.2 阅读接口
 
@@ -1480,6 +1489,7 @@ PUT /api/v1/admin/system/settings
 
 - 设置修改立即生效。
 - `max_upload_size_mb` 不能超过启动时 `REQUEST_BODY_LIMIT_MB`。
+- `library_review_required` 保留用于兼容旧配置，当前不影响公共图书上传状态。
 - 存储统计第一期可基于数据库 `file_size` 汇总，目录真实占用后续增强。
 
 ## 19. 路由总表
@@ -1505,6 +1515,8 @@ PUT /api/v1/admin/system/settings
 /api/v1/library/books
 /api/v1/library/books/:id
 /api/v1/library/books/upload
+/api/v1/library/books/:id/hide
+/api/v1/library/books/:id/show
 /api/v1/library/books/:id/add-to-bookshelf
 
 /api/v1/categories
@@ -1558,13 +1570,14 @@ DELETE /api/v1/admin/users/:id
 阅读自己的私有图书             否    是        是
 浏览 approved 公共图书         否    是        是
 上传公共图书                   否    是        是
-读取自己 pending 公共图书      否    是        是
+下架自己上传公共图书           否    是        是
+重新上架自己上传公共图书       否    是        是
 加入公共图书到书架             否    是        是
 管理自己的阅读进度             否    是        是
 管理自己的书签                 否    是        是
 管理用户                       否    否        是
-审核公共图书                   否    否        是
-隐藏/删除公共图书              否    否        是
+上下架公共图书                 否    否        是
+物理删除公共图书               否    否        是
 管理系统分类                   否    否        是
 管理系统标签                   否    否        是
 管理系统设置                   否    否        是
@@ -1781,12 +1794,14 @@ conn_max_lifetime=1h
 - 公共图书列表和详情。
 - 加入书架。
 - 管理员公共图书列表。
-- 审核、隐藏、删除。
+- 上架、下架、物理删除。
 
 验收：
 
 - 公共图书加入书架不复制文件。
-- 审核开关生效。
+- 普通用户可以下架自己上传的公共图书。
+- 普通用户可以重新上架自己上传且已下架的公共图书。
+- 管理员删除公共图书后，数据库索引记录和物理文件都被清理。
 - hidden/deleted 图书普通用户不可读。
 
 ### 阶段六：分类标签
@@ -1816,7 +1831,7 @@ conn_max_lifetime=1h
 验收：
 
 - 关闭注册后非首个用户无法注册。
-- 修改公共图书审核开关后立即生效。
+- 系统设置修改后立即生效。
 
 ### 阶段八：增强
 
@@ -1898,17 +1913,18 @@ bash test/smoke.sh
 
 后续开发必须遵守：
 
-1. 私有图书从书架删除时，物理删除真实文件。
-2. `pending` 是公共图书待审核状态，不是上传中状态。
-3. 公共图书上传者在 pending 状态下允许自己查看和读取。
-4. 用户上传公共图书后，不自动加入自己的书架。
-5. 公共图书加入个人书架只创建引用，不复制文件。
-6. Refresh Token 浏览器端默认使用 HttpOnly Cookie，开发调试可兼容 JSON body。
-7. MVP 需要解析 EPUB/PDF/TXT 元数据、封面和章节目录。
-8. TXT 必须解析章节目录，前端先请求章节目录，再按章节请求正文。
-9. 分类和标签由管理员统一维护，普通用户只能从已有分类、标签中选择。
-10. 管理员删除公共图书时支持物理删除文件选项。
-11. 需要用户存储配额，管理员可调整单个用户配额。
-12. 不允许匿名浏览公共图书馆；公共图书馆仅登录用户可访问。
-13. 所有真实文件路径必须由 `storage` 模块生成和校验。
-14. 阅读文件和封面访问必须携带 Authorization；EPUB 内嵌资源访问必须携带 Authorization 或后端签名 URL，且两种方式都必须通过阅读权限校验。
+1. 私有图书从书架删除时，先标记删除，再物理删除真实文件，最后清理数据库图书条目和关联数据。
+2. 公共图书状态只有 `approved`、`hidden`、`deleted` 三种。
+3. `approved` 表示已上架；`hidden` 表示已下架；`deleted` 只用于管理员物理删除流程中的内部标记。
+4. 用户上传公共图书后默认 `approved`，不自动加入自己的书架。
+5. 普通用户只能下架自己上传的公共图书，下架不删除文件、不清理已有书架引用。
+6. 管理员删除公共图书必须物理删除文件，并清理图书记录、章节、分类/标签关联、书架引用、阅读进度和书签。
+7. 公共图书加入个人书架只创建引用，不复制文件。
+8. Refresh Token 浏览器端默认使用 HttpOnly Cookie，开发调试可兼容 JSON body。
+9. MVP 需要解析 EPUB/PDF/TXT 元数据、封面和章节目录。
+10. TXT 必须解析章节目录，前端先请求章节目录，再按章节请求正文。
+11. 分类和标签由管理员统一维护，普通用户只能从已有分类、标签中选择。
+12. 需要用户存储配额，管理员可调整单个用户配额。
+13. 不允许匿名浏览公共图书馆；公共图书馆仅登录用户可访问。
+14. 所有真实文件路径必须由 `storage` 模块生成和校验。
+15. 阅读文件和封面访问必须携带 Authorization；EPUB 内嵌资源访问必须携带 Authorization 或后端签名 URL，且两种方式都必须通过阅读权限校验。

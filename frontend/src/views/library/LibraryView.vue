@@ -2,7 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useRouter } from 'vue-router'
-import { Plus, Search } from 'lucide-vue-next'
+import { Library, Plus, Search } from 'lucide-vue-next'
 import PageShell from '@/components/common/PageShell.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PaginationBar from '@/components/common/PaginationBar.vue'
@@ -53,6 +53,14 @@ onMounted(() => fetchPage())
     <template #actions>
       <n-tooltip trigger="hover">
         <template #trigger>
+          <n-button secondary circle title="我的公共图书馆" @click="router.push('/library/mine')">
+            <Library :size="18" />
+          </n-button>
+        </template>
+        我的公共图书馆
+      </n-tooltip>
+      <n-tooltip trigger="hover">
+        <template #trigger>
           <n-button secondary circle title="搜索和筛选" @click="filterDrawer = true">
             <Search :size="18" />
           </n-button>
@@ -84,7 +92,7 @@ onMounted(() => fetchPage())
       </n-drawer-content>
     </n-drawer>
     <n-spin :show="store.loading">
-      <EmptyState v-if="!store.books.length && !store.loading" title="还没有公共图书" description="上传一本公共图书，审核通过后大家都能引用阅读。" />
+      <EmptyState v-if="!store.books.length && !store.loading" title="还没有公共图书" description="上传一本公共图书，大家就能引用阅读。" />
       <div v-else class="grid-books">
         <BookCard
           v-for="book in store.books"

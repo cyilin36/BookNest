@@ -4,7 +4,7 @@ import { useDialog, useMessage } from 'naive-ui'
 import { Search } from 'lucide-vue-next'
 import PageShell from '@/components/common/PageShell.vue'
 import PaginationBar from '@/components/common/PaginationBar.vue'
-import { adminApi } from '@/api/admin'
+import { adminApi, type AdminLibraryEditableStatus } from '@/api/admin'
 import type { BookFormat, LibraryBook, LibraryStatus, Pagination } from '@/api/types'
 import { formatBytes, formatDate } from '@/utils/format'
 
@@ -22,9 +22,7 @@ const filters = reactive({
 
 const statusOptions = [
   { label: '全部状态', value: null },
-  { label: '待审核', value: 'pending' },
   { label: '已通过', value: 'approved' },
-  { label: '已拒绝', value: 'rejected' },
   { label: '已隐藏', value: 'hidden' },
   { label: '已删除', value: 'deleted' }
 ]
@@ -36,14 +34,9 @@ const formatOptions = [
   { label: 'TXT', value: 'txt' }
 ]
 
-const transitionOptions: Record<LibraryStatus, { label: string; status: LibraryStatus }[]> = {
-  pending: [
-    { label: '通过', status: 'approved' },
-    { label: '拒绝', status: 'rejected' }
-  ],
+const transitionOptions: Record<LibraryStatus, { label: string; status: AdminLibraryEditableStatus }[]> = {
   approved: [{ label: '隐藏', status: 'hidden' }],
   hidden: [{ label: '恢复', status: 'approved' }],
-  rejected: [],
   deleted: []
 }
 
@@ -65,7 +58,7 @@ async function fetchBooks(page = 1) {
   }
 }
 
-async function changeStatus(book: LibraryBook, status: LibraryStatus) {
+async function changeStatus(book: LibraryBook, status: AdminLibraryEditableStatus) {
   try {
     Object.assign(book, await adminApi.updateLibraryStatus(book.id, { status }))
     message.success('状态已更新')
@@ -77,13 +70,14 @@ async function changeStatus(book: LibraryBook, status: LibraryStatus) {
 function confirmDelete(book: LibraryBook) {
   dialog.warning({
     title: `删除「${book.title}」`,
-    content: '默认只标记为已删除；勾选物理删除需要在 API 中传 delete_file=true，当前按钮使用软删除。',
+    content: '删除后会移除公共图书、物理文件、书架引用、阅读进度和书签，且不可恢复。',
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await adminApi.deleteLibraryBook(book.id, false)
-        book.library_status = 'deleted'
+        await adminApi.deleteLibraryBook(book.id)
+        books.value = books.value.filter((row) => row.id !== book.id)
+        pagination.value.total = Math.max(0, pagination.value.total - 1)
         message.success('已删除')
       } catch (error) {
         message.error(error instanceof Error ? error.message : '删除失败')
@@ -96,7 +90,7 @@ onMounted(() => fetchBooks())
 </script>
 
 <template>
-  <PageShell title="公共图书审核" subtitle="管理公共图书的状态和删除">
+  <PageShell title="公共图书管理" subtitle="管理公共图书的状态和删除">
     <template #actions>
       <n-tooltip trigger="hover">
         <template #trigger>
@@ -136,7 +130,7 @@ onMounted(() => fetchBooks())
             <strong>{{ book.title }}</strong>
             <span>{{ book.author || '未知作者' }} · {{ book.format.toUpperCase() }}</span>
           </div>
-          <n-tag size="small" :type="book.library_status === 'approved' ? 'success' : book.library_status === 'pending' ? 'warning' : 'default'">
+          <n-tag size="small" :type="book.library_status === 'approved' ? 'success' : book.library_status === 'hidden' ? 'warning' : 'default'">
             {{ book.library_status }}
           </n-tag>
           <span>{{ book.owner_username || book.owner_user_id }}</span>

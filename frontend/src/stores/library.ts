@@ -30,9 +30,13 @@ export const useLibraryStore = defineStore('library', {
     async addToBookshelf(bookId: number) {
       this.joiningBookId = bookId
       try {
-        await libraryApi.addToBookshelf(bookId)
+        const shelfItem = await libraryApi.addToBookshelf(bookId)
         const book = this.books.find((item) => item.id === bookId)
-        if (book) book.in_bookshelf = true
+        if (book) {
+          book.in_bookshelf = true
+          book.bookshelf_id = shelfItem.id
+        }
+        return shelfItem
       } finally {
         this.joiningBookId = null
       }

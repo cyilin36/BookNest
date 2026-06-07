@@ -14,9 +14,7 @@ const (
 	BookFormatPDF  = "pdf"
 	BookFormatTXT  = "txt"
 
-	LibraryStatusPending  = "pending"
 	LibraryStatusApproved = "approved"
-	LibraryStatusRejected = "rejected"
 	LibraryStatusHidden   = "hidden"
 	LibraryStatusDeleted  = "deleted"
 

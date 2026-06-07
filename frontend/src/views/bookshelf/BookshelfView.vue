@@ -35,8 +35,8 @@ const formatOptions = [
 
 const sourceOptions = [
   { label: '全部来源', value: null },
-  { label: '私有上传', value: 'uploaded' },
-  { label: '引自公共馆', value: 'library' }
+  { label: '私人图书', value: 'uploaded' },
+  { label: '公共图书', value: 'library' }
 ]
 
 const favoriteOptions = [
@@ -61,12 +61,16 @@ async function fetchPage(page = 1) {
 function confirmRemove(id: number) {
   dialog.warning({
     title: '移除图书',
-    content: '私有上传图书会同步删除文件；公共图书只移除你的书架引用。',
+    content: '私人图书会同时删除图书文件和相关数据；公共图书只移除你的书架引用。',
     positiveText: '移除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await store.removeBookshelfItem(id)
-      message.success('已移除')
+      try {
+        await store.removeBookshelfItem(id)
+        message.success('已移除')
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '移除失败')
+      }
     }
   })
 }

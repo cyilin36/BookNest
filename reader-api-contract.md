@@ -72,7 +72,7 @@ export type UserRole = 'admin' | 'user'
 export type UserStatus = 'active' | 'disabled'
 export type BookFormat = 'epub' | 'pdf' | 'txt'
 export type BookVisibility = 'private' | 'public'
-export type LibraryStatus = 'pending' | 'approved' | 'rejected' | 'hidden' | 'deleted'
+export type LibraryStatus = 'approved' | 'hidden' | 'deleted'
 export type BookshelfSourceType = 'uploaded' | 'library'
 export type BookshelfStatus = 'active' | 'removed' | 'unavailable'
 export type ProgressType = 'epub_cfi' | 'pdf_page' | 'txt_offset'
@@ -146,7 +146,7 @@ export interface BookshelfItem {
   last_read_at: string | null
   added_at: string
   readable: boolean
-  unreadable_reason: 'library_hidden' | 'library_deleted' | 'library_rejected' | 'file_missing' | 'permission_denied' | null
+  unreadable_reason: 'library_hidden' | 'library_deleted' | 'file_missing' | 'permission_denied' | null
   progress_percentage: number | null
 }
 ```
@@ -525,6 +525,13 @@ DELETE /api/v1/bookshelf/:id
 
 响应：`{}`。
 
+规则：
+
+- 移除公共图书馆引用时，只删除当前用户书架引用，不删除公共图书文件和公共图书记录。
+- 移除自己上传的私有图书时，后端先写入 `books.deleted_at` 作为删除标记，再物理删除图书文件和封面文件，最后删除该书的书架项、书架标签、阅读进度、书签、章节和 `books` 图书记录。
+- 私有图书删除成功后，数据库不再保留该图书条目和相关个人数据，效果等同从未添加过该图书。
+- 私有图书物理文件删除失败时，后端会撤销 `books.deleted_at` 删除标记，并返回 `book_file_delete_failed`；前端应把错误消息提示给用户。
+
 ### 从公共图书加入书架
 
 ```http
@@ -556,7 +563,7 @@ format=epub|pdf|txt
 category_id
 tag_id
 mine=true|false
-status=pending|approved|rejected|hidden|deleted
+status=approved|hidden
 page
 page_size
 sort=created_at|title
@@ -565,7 +572,7 @@ order=asc|desc
 
 响应：分页 `LibraryBook[]`。
 
-普通查询默认只返回 `approved` 公共图书。`mine=true&status=pending` 只返回当前用户自己上传的 pending 图书。
+普通查询默认只返回 `approved` 公共图书。`mine=true` 可查看当前用户自己上传的公共图书，并可用 `status=approved|hidden` 过滤。
 
 ### 公共图书详情
 
@@ -577,7 +584,7 @@ GET /api/v1/library/books/:id
 
 响应：`LibraryBook`。
 
-规则：普通用户可查看 approved 图书；上传者可查看自己上传的 pending 图书。
+规则：普通用户可查看 `approved` 图书；上传者可查看自己上传的 `approved` 或 `hidden` 图书。
 
 ### 上传公共图书
 
@@ -593,11 +600,52 @@ POST /api/v1/library/books/upload
 
 响应：`LibraryBook`。
 
-规则：审核开启时返回 `library_status='pending'`，审核关闭时返回 `approved`；不自动加入上传者书架。
+规则：上传后返回 `library_status='approved'`；不自动加入上传者书架。
+
+### 下架自己上传的公共图书
+
+```http
+POST /api/v1/library/books/:id/hide
+```
+
+权限：登录，且必须是该公共图书上传者。
+
+响应：`LibraryBook`。
+
+规则：
+
+- 只允许下架自己上传的公共图书。
+- `approved` 可以下架为 `hidden`。
+- 已经是 `hidden` 时幂等返回当前图书。
+- `deleted` 不允许下架。
+- 只更新 `books.library_status='hidden'` 和 `books.updated_at`，不更新 `deleted_at`。
+- 不删除图书文件、封面、书架引用、阅读进度或书签。
+- 下架后公共图书馆普通列表不可见，不能被新增加入书架。
+- 已加入他人书架的引用保留，书架仍可展示，但 `readable=false` 且 `unreadable_reason='library_hidden'`，不能继续阅读。
+
+### 重新上架自己上传的公共图书
+
+```http
+POST /api/v1/library/books/:id/show
+```
+
+权限：登录，且必须是该公共图书上传者。
+
+响应：`LibraryBook`。
+
+规则：
+
+- 只允许重新上架自己上传的公共图书。
+- 图书必须是 `visibility='public'`、`owner_user_id=current_user_id`、`deleted_at IS NULL`。
+- 只允许 `library_status='hidden'` 的图书重新上架。
+- 更新 `books.library_status='approved'` 和 `books.updated_at`。
+- 不删除或修改图书文件、封面、书架引用、阅读进度或书签。
+- `approved`、`deleted` 或其他状态不允许通过该接口恢复。
+- 管理员已物理删除的公共图书不会出现在 `mine=true` 列表，也无法重新上架，效果等同用户从未上传过该书。
 
 ## 11. 阅读接口
 
-阅读接口统一权限：登录。私有图书要求当前用户存在书架记录；公共图书要求 `approved`；公共图书上传者可读取自己上传的 pending 图书；管理员可读取所有未物理丢失图书。
+阅读接口统一权限：登录。私有图书要求当前用户存在书架记录；公共图书要求 `approved`；管理员可读取所有未物理丢失图书。
 
 ### 阅读元数据
 
@@ -1009,7 +1057,7 @@ PATCH /api/v1/admin/library/books/:id/status
 
 ```ts
 interface UpdateLibraryBookStatusRequest {
-  status: LibraryStatus
+  status: 'approved' | 'hidden'
   reason?: string | null
 }
 ```
@@ -1019,24 +1067,27 @@ interface UpdateLibraryBookStatusRequest {
 允许状态流转：
 
 ```text
-pending -> approved
-pending -> rejected
 approved -> hidden
 hidden -> approved
-approved -> deleted
-hidden -> deleted
-rejected -> deleted
 ```
 
 ### 删除公共图书
 
 ```http
-DELETE /api/v1/admin/library/books/:id?delete_file=false
+DELETE /api/v1/admin/library/books/:id
 ```
 
 权限：管理员。
 
-响应：`{}`。默认软删除；`delete_file=true` 时物理删除文件并同步处理相关书架引用。
+响应：`{}`。
+
+规则：
+
+- 管理员删除公共图书是真正删除。
+- 执行时先将图书标记为 `library_status='deleted'` 并写入 `deleted_at`。
+- 标记成功后物理删除图书文件和封面文件。
+- 最后删除数据库中的图书记录、章节、图书分类/标签关联、书架引用、阅读进度和书签。
+- 删除完成后该图书不会再出现在公共图书馆或任何用户书架中。
 
 ### 存储统计
 
@@ -1091,7 +1142,10 @@ PUT /api/v1/admin/system/settings
 
 响应：`SystemSettings`。
 
-规则：`max_upload_size_mb` 不能超过启动时 `REQUEST_BODY_LIMIT_MB`。
+规则：
+
+- `max_upload_size_mb` 不能超过启动时 `REQUEST_BODY_LIMIT_MB`。
+- `library_review_required` 保留用于兼容旧配置，当前不影响公共图书上传状态。
 
 ## 15. 错误码
 
@@ -1124,6 +1178,7 @@ book_not_found
 book_already_in_bookshelf
 book_format_not_supported
 book_file_missing
+book_file_delete_failed
 library_book_not_approved
 library_review_required
 category_not_found
@@ -1157,6 +1212,6 @@ storage_quota_exceeded
 3. 私有上传、书架列表、书架详情、删除。
 4. 阅读 meta、chapters、chapter content、progress。
 5. PDF `Range` 请求返回 206。
-6. 公共图书上传、审核、加入书架。
+6. 公共图书上传、下架、加入书架。
 7. 分类和标签筛选。
 8. 管理员用户、系统设置、存储统计。

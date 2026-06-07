@@ -2,7 +2,7 @@ export type UserRole = 'admin' | 'user'
 export type UserStatus = 'active' | 'disabled'
 export type BookFormat = 'epub' | 'pdf' | 'txt'
 export type BookVisibility = 'private' | 'public'
-export type LibraryStatus = 'pending' | 'approved' | 'rejected' | 'hidden' | 'deleted'
+export type LibraryStatus = 'approved' | 'hidden' | 'deleted'
 export type BookshelfSourceType = 'uploaded' | 'library'
 export type BookshelfStatus = 'active' | 'removed' | 'unavailable'
 export type ProgressType = 'epub_cfi' | 'pdf_page' | 'txt_offset'
@@ -113,7 +113,7 @@ export interface BookshelfItem {
   last_read_at: string | null
   added_at: string
   readable: boolean
-  unreadable_reason: 'library_hidden' | 'library_deleted' | 'library_rejected' | 'file_missing' | 'permission_denied' | null
+  unreadable_reason: 'library_hidden' | 'library_deleted' | 'file_missing' | 'permission_denied' | null
   progress_percentage: number | null
 }
 

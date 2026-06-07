@@ -106,9 +106,6 @@ func (s *Server) uploadBook(c *gin.Context, visibility string) {
 	}
 	if visibility == model.BookVisibilityPublic {
 		status := model.LibraryStatusApproved
-		if s.loadSettings().LibraryReviewRequired && u.Role != model.UserRoleAdmin {
-			status = model.LibraryStatusPending
-		}
 		book.LibraryStatus = &status
 	}
 	var shelf *model.Bookshelf
@@ -428,21 +425,29 @@ func (s *Server) deleteBookshelf(c *gin.Context) {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
 		return
 	}
+	now := time.Now()
 	if item.SourceType == model.BookshelfSourceUploaded && book.Visibility == model.BookVisibilityPrivate {
-		if err := s.removeBookFiles(book); err != nil && !os.IsNotExist(err) {
-			common.RespondError(c, middleware.GetRequestID(c), common.ErrBookFileMissing)
+		if err := s.db.Model(&model.Book{}).Where("id = ? AND owner_user_id = ? AND visibility = ?", book.ID, u.ID, model.BookVisibilityPrivate).
+			Updates(map[string]any{"deleted_at": now, "updated_at": now}).Error; err != nil {
+			common.RespondError(c, middleware.GetRequestID(c), err)
 			return
 		}
+		if err := s.removeBookFiles(book); err != nil && !os.IsNotExist(err) {
+			_ = s.db.Model(&model.Book{}).Where("id = ? AND owner_user_id = ? AND visibility = ?", book.ID, u.ID, model.BookVisibilityPrivate).
+				Updates(map[string]any{"deleted_at": nil, "updated_at": time.Now()}).Error
+			common.RespondError(c, middleware.GetRequestID(c), common.ErrBookFileDeleteFailed)
+			return
+		}
+		if err := s.hardDeleteBookData(book.ID, model.BookVisibilityPrivate); err != nil {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+		common.RespondJSON(c, middleware.GetRequestID(c), gin.H{})
+		return
 	}
-	now := time.Now()
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.Bookshelf{}).Where("id = ? AND user_id = ?", id, u.ID).Updates(map[string]any{"status": model.BookshelfStatusRemoved, "removed_at": now}).Error; err != nil {
 			return err
-		}
-		if item.SourceType == model.BookshelfSourceUploaded && book.Visibility == model.BookVisibilityPrivate {
-			if err := tx.Model(&model.Book{}).Where("id = ?", book.ID).Update("deleted_at", now).Error; err != nil {
-				return err
-			}
 		}
 		return nil
 	})
@@ -451,6 +456,46 @@ func (s *Server) deleteBookshelf(c *gin.Context) {
 		return
 	}
 	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{})
+}
+
+func (s *Server) hardDeleteBookData(bookID int64, visibility string) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var shelfIDs []int64
+		if err := tx.Model(&model.Bookshelf{}).Where("book_id = ?", bookID).Pluck("id", &shelfIDs).Error; err != nil {
+			return err
+		}
+		if len(shelfIDs) > 0 {
+			if err := tx.Where("bookshelf_id IN ?", shelfIDs).Delete(&model.BookshelfTag{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("book_id = ?", bookID).Delete(&model.Bookmark{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("book_id = ?", bookID).Delete(&model.ReadingProgress{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("book_id = ?", bookID).Delete(&model.Bookshelf{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("book_id = ?", bookID).Delete(&model.BookCategory{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("book_id = ?", bookID).Delete(&model.BookTag{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("book_id = ?", bookID).Delete(&model.BookChapter{}).Error; err != nil {
+			return err
+		}
+		res := tx.Where("id = ? AND visibility = ?", bookID, visibility).Delete(&model.Book{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return common.ErrBookNotFound
+		}
+		return nil
+	})
 }
 
 func (s *Server) addLibraryBookToShelf(c *gin.Context) {
@@ -535,11 +580,13 @@ func (s *Server) libraryListBase(c *gin.Context, admin bool) {
 		if c.Query("mine") == "true" {
 			q = q.Where("books.owner_user_id = ?", u.ID)
 			if st := c.Query("status"); st != "" {
-				if !validLibraryStatus(st) {
+				if !validLibraryShelfStatus(st) {
 					common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
 					return
 				}
 				q = q.Where("books.library_status = ?", st)
+			} else {
+				q = q.Where("books.library_status IN ?", []string{model.LibraryStatusApproved, model.LibraryStatusHidden})
 			}
 		} else {
 			if c.Query("mine") != "" && c.Query("mine") != "false" {
@@ -627,7 +674,7 @@ func (s *Server) libraryDetail(c *gin.Context) {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
 		return
 	}
-	if u.Role != model.UserRoleAdmin && (b.LibraryStatus == nil || (*b.LibraryStatus != model.LibraryStatusApproved && !(b.OwnerUserID == u.ID && *b.LibraryStatus == model.LibraryStatusPending))) {
+	if u.Role != model.UserRoleAdmin && (b.LibraryStatus == nil || (*b.LibraryStatus != model.LibraryStatusApproved && !(b.OwnerUserID == u.ID && *b.LibraryStatus == model.LibraryStatusHidden))) {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrForbidden)
 		return
 	}
@@ -642,6 +689,90 @@ func (s *Server) libraryDetail(c *gin.Context) {
 		bookshelfID = &shelf.ID
 	}
 	common.RespondJSON(c, middleware.GetRequestID(c), s.libraryDTO(b, ownerUsername, bookshelfID))
+}
+
+func (s *Server) hideOwnLibraryBook(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	u := middleware.CurrentUser(c)
+	var b model.Book
+	if err := s.db.First(&b, "id = ? AND visibility = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic).Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
+		return
+	}
+	if b.OwnerUserID != u.ID {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrForbidden)
+		return
+	}
+	if b.LibraryStatus != nil && *b.LibraryStatus == model.LibraryStatusDeleted {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrConflict)
+		return
+	}
+	if b.LibraryStatus != nil && *b.LibraryStatus == model.LibraryStatusHidden {
+		common.RespondJSON(c, middleware.GetRequestID(c), s.libraryDTO(b, u.Username, s.activeBookshelfID(u.ID, b.ID)))
+		return
+	}
+	hidden := model.LibraryStatusHidden
+	now := time.Now()
+	res := s.db.Model(&model.Book{}).Where("id = ? AND visibility = ? AND owner_user_id = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic, u.ID).
+		Updates(map[string]any{"library_status": hidden, "updated_at": now})
+	if res.Error != nil {
+		common.RespondError(c, middleware.GetRequestID(c), res.Error)
+		return
+	}
+	if res.RowsAffected == 0 {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
+		return
+	}
+	b.LibraryStatus = &hidden
+	b.UpdatedAt = now
+	common.RespondJSON(c, middleware.GetRequestID(c), s.libraryDTO(b, u.Username, s.activeBookshelfID(u.ID, b.ID)))
+}
+
+func (s *Server) showOwnLibraryBook(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	u := middleware.CurrentUser(c)
+	var b model.Book
+	if err := s.db.First(&b, "id = ? AND visibility = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic).Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
+		return
+	}
+	if b.OwnerUserID != u.ID {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrForbidden)
+		return
+	}
+	if b.LibraryStatus == nil || *b.LibraryStatus != model.LibraryStatusHidden {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrConflict)
+		return
+	}
+	approved := model.LibraryStatusApproved
+	now := time.Now()
+	res := s.db.Model(&model.Book{}).Where("id = ? AND visibility = ? AND owner_user_id = ? AND deleted_at IS NULL AND library_status = ?", id, model.BookVisibilityPublic, u.ID, model.LibraryStatusHidden).
+		Updates(map[string]any{"library_status": approved, "updated_at": now})
+	if res.Error != nil {
+		common.RespondError(c, middleware.GetRequestID(c), res.Error)
+		return
+	}
+	if res.RowsAffected == 0 {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrConflict)
+		return
+	}
+	b.LibraryStatus = &approved
+	b.UpdatedAt = now
+	common.RespondJSON(c, middleware.GetRequestID(c), s.libraryDTO(b, u.Username, s.activeBookshelfID(u.ID, b.ID)))
+}
+
+func (s *Server) activeBookshelfID(userID, bookID int64) *int64 {
+	var shelf model.Bookshelf
+	if s.db.First(&shelf, "user_id = ? AND book_id = ? AND status = ?", userID, bookID, model.BookshelfStatusActive).Error != nil {
+		return nil
+	}
+	return &shelf.ID
 }
 
 func (s *Server) categories(c *gin.Context) {
@@ -784,9 +915,6 @@ func (s *Server) bookshelfDTO(item model.Bookshelf, b model.Book, progress *floa
 		case model.LibraryStatusHidden:
 			r := "library_hidden"
 			reason = &r
-		case model.LibraryStatusRejected:
-			r := "library_rejected"
-			reason = &r
 		default:
 			r := "permission_denied"
 			reason = &r
@@ -904,7 +1032,7 @@ func (s *Server) readAllowed(u *model.User, bookID int64) (model.Book, error) {
 		}
 		return b, common.ErrBookNotAccessible
 	}
-	if b.LibraryStatus != nil && (*b.LibraryStatus == model.LibraryStatusApproved || (b.OwnerUserID == u.ID && *b.LibraryStatus == model.LibraryStatusPending)) {
+	if b.LibraryStatus != nil && *b.LibraryStatus == model.LibraryStatusApproved {
 		return b, nil
 	}
 	return b, common.ErrBookNotAccessible

@@ -12,6 +12,16 @@ const router = useRouter()
 const book = ref<BookshelfItem | null>(null)
 const loading = ref(false)
 
+function formatUnreadableReason(reason: BookshelfItem['unreadable_reason']) {
+  const labels: Record<NonNullable<BookshelfItem['unreadable_reason']>, string> = {
+    library_hidden: '公共图书已下架',
+    library_deleted: '公共图书已删除',
+    file_missing: '图书文件丢失',
+    permission_denied: '暂无阅读权限'
+  }
+  return reason ? labels[reason] : '暂时无法阅读'
+}
+
 onMounted(async () => {
   loading.value = true
   try {
@@ -30,8 +40,8 @@ onMounted(async () => {
         <section class="detail-info">
           <div class="toolbar">
             <FormatTag :format="book.format" />
-            <n-tag round>{{ book.source_type === 'uploaded' ? '私有上传' : '引自公共馆' }}</n-tag>
-            <n-tag v-if="!book.readable" type="error" round>{{ book.unreadable_reason }}</n-tag>
+            <n-tag round>{{ book.source_type === 'uploaded' ? '私人图书' : '公共图书' }}</n-tag>
+            <n-tag v-if="!book.readable" type="error" round>{{ formatUnreadableReason(book.unreadable_reason) }}</n-tag>
           </div>
           <h1>{{ book.title }}</h1>
           <p class="muted">{{ book.author || '未知作者' }}</p>

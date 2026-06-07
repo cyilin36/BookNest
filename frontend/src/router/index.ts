@@ -9,6 +9,7 @@ import BookshelfView from '@/views/bookshelf/BookshelfView.vue'
 import BookshelfDetailView from '@/views/bookshelf/BookshelfDetailView.vue'
 import LibraryView from '@/views/library/LibraryView.vue'
 import LibraryDetailView from '@/views/library/LibraryDetailView.vue'
+import MyLibraryView from '@/views/library/MyLibraryView.vue'
 import ReaderView from '@/views/reader/ReaderView.vue'
 import UploadView from '@/views/upload/UploadView.vue'
 import SettingsView from '@/views/settings/SettingsView.vue'
@@ -39,6 +40,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'bookshelf', name: 'bookshelf', component: BookshelfView },
       { path: 'bookshelf/:id', name: 'bookshelf-detail', component: BookshelfDetailView, props: true },
       { path: 'library', name: 'library', component: LibraryView },
+      { path: 'library/mine', name: 'library-mine', component: MyLibraryView },
       { path: 'library/:id', name: 'library-detail', component: LibraryDetailView, props: true },
       { path: 'upload', name: 'upload', component: UploadView },
       { path: 'settings', name: 'settings', component: SettingsView }

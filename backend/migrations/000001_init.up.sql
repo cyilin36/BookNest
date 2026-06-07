@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS books (
   CONSTRAINT chk_books_format CHECK (format IN ('epub', 'pdf', 'txt')),
   CONSTRAINT chk_books_visibility CHECK (visibility IN ('private', 'public')),
   CONSTRAINT chk_books_library_status CHECK (
-    library_status IS NULL OR library_status IN ('pending', 'approved', 'rejected', 'hidden', 'deleted')
+    library_status IS NULL OR library_status IN ('approved', 'hidden', 'deleted')
   ),
   CONSTRAINT chk_books_parse_status CHECK (parse_status IN ('parsed', 'partial', 'failed'))
 );

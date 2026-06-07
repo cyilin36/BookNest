@@ -63,8 +63,8 @@ a {
 
 .grid-books {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 28px 20px;
 }
 
 .muted {
@@ -82,5 +82,10 @@ a {
 
   .page-header {
     flex-direction: column;
+  }
+
+  .grid-books {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 22px 12px;
   }
 }

@@ -345,7 +345,7 @@ func (s *Server) adminUpdateLibraryStatus(c *gin.Context) {
 		Status string  `json:"status"`
 		Reason *string `json:"reason"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || !validLibraryStatus(req.Status) {
+	if err := c.ShouldBindJSON(&req); err != nil || !validLibraryShelfStatus(req.Status) {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
 		return
 	}
@@ -359,11 +359,7 @@ func (s *Server) adminUpdateLibraryStatus(c *gin.Context) {
 		return
 	}
 	now := time.Now()
-	updates := map[string]any{"library_status": req.Status, "updated_at": now}
-	if req.Status == model.LibraryStatusDeleted {
-		updates["deleted_at"] = now
-	}
-	if err := s.db.Model(&model.Book{}).Where("id = ? AND visibility = ?", id, model.BookVisibilityPublic).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&model.Book{}).Where("id = ? AND visibility = ?", id, model.BookVisibilityPublic).Updates(map[string]any{"library_status": req.Status, "updated_at": now}).Error; err != nil {
 		common.RespondError(c, middleware.GetRequestID(c), err)
 		return
 	}
@@ -376,39 +372,32 @@ func (s *Server) adminDeleteLibraryBook(c *gin.Context) {
 	if !ok {
 		return
 	}
-	deleteFileRaw := c.Query("delete_file")
-	if deleteFileRaw != "" && deleteFileRaw != "true" && deleteFileRaw != "false" {
-		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
-		return
-	}
-	deleteFile := deleteFileRaw == "true"
 	var b model.Book
 	if err := s.db.First(&b, "id = ? AND visibility = ?", id, model.BookVisibilityPublic).Error; err != nil {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
 		return
 	}
-	if deleteFile {
-		if err := s.removeBookFiles(b); err != nil {
-			common.RespondError(c, middleware.GetRequestID(c), common.ErrBookFileMissing)
-			return
-		}
-	}
 	now := time.Now()
 	deleted := model.LibraryStatusDeleted
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&model.Book{}).Where("id = ?", id).Updates(map[string]any{"library_status": deleted, "deleted_at": now, "updated_at": now})
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&model.Book{}).Where("id = ? AND visibility = ?", id, model.BookVisibilityPublic).
+			Updates(map[string]any{"library_status": deleted, "deleted_at": now, "updated_at": now})
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
 			return common.ErrBookNotFound
 		}
-		if deleteFile {
-			return tx.Model(&model.Bookshelf{}).Where("book_id = ?", id).Updates(map[string]any{"status": model.BookshelfStatusUnavailable, "removed_at": now}).Error
-		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if err := s.removeBookFiles(b); err != nil && !os.IsNotExist(err) {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookFileMissing)
+		return
+	}
+	if err := s.hardDeleteBookData(id, model.BookVisibilityPublic); err != nil {
 		common.RespondError(c, middleware.GetRequestID(c), err)
 		return
 	}
@@ -417,7 +406,15 @@ func (s *Server) adminDeleteLibraryBook(c *gin.Context) {
 
 func validLibraryStatus(v string) bool {
 	switch v {
-	case model.LibraryStatusPending, model.LibraryStatusApproved, model.LibraryStatusRejected, model.LibraryStatusHidden, model.LibraryStatusDeleted:
+	case model.LibraryStatusApproved, model.LibraryStatusHidden, model.LibraryStatusDeleted:
+		return true
+	}
+	return false
+}
+
+func validLibraryShelfStatus(v string) bool {
+	switch v {
+	case model.LibraryStatusApproved, model.LibraryStatusHidden:
 		return true
 	}
 	return false
@@ -626,17 +623,13 @@ func (s *Server) hasTagAssociations(tagID int64) bool {
 
 func validLibraryTransition(from *string, to string) bool {
 	if from == nil {
-		return to == model.LibraryStatusPending || to == model.LibraryStatusApproved
+		return to == model.LibraryStatusApproved || to == model.LibraryStatusHidden
 	}
 	switch *from {
-	case model.LibraryStatusPending:
-		return to == model.LibraryStatusApproved || to == model.LibraryStatusRejected
 	case model.LibraryStatusApproved:
-		return to == model.LibraryStatusHidden || to == model.LibraryStatusDeleted
+		return to == model.LibraryStatusHidden
 	case model.LibraryStatusHidden:
-		return to == model.LibraryStatusApproved || to == model.LibraryStatusDeleted
-	case model.LibraryStatusRejected:
-		return to == model.LibraryStatusDeleted
+		return to == model.LibraryStatusApproved
 	case model.LibraryStatusDeleted:
 		return false
 	default:
