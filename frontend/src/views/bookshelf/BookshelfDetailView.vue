@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Download } from 'lucide-vue-next'
+import { Download, Pencil } from 'lucide-vue-next'
 import { useMessage } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import PageShell from '@/components/common/PageShell.vue'
 import BookCover from '@/components/book/BookCover.vue'
+import BookInfoEditModal, { type BookInfoEditPayload } from '@/components/book/BookInfoEditModal.vue'
 import FormatTag from '@/components/book/FormatTag.vue'
 import { bookshelfApi } from '@/api/bookshelf'
 import { createBookDownloadName, downloadBlob } from '@/utils/download'
@@ -16,6 +17,8 @@ const message = useMessage()
 const book = ref<BookshelfItem | null>(null)
 const loading = ref(false)
 const downloading = ref(false)
+const editOpen = ref(false)
+const savingInfo = ref(false)
 
 function formatUnreadableReason(reason: BookshelfItem['unreadable_reason']) {
   const labels: Record<NonNullable<BookshelfItem['unreadable_reason']>, string> = {
@@ -38,6 +41,20 @@ async function downloadBook() {
     message.error(error instanceof Error ? error.message : '下载失败')
   } finally {
     downloading.value = false
+  }
+}
+
+async function saveBookInfo(payload: BookInfoEditPayload) {
+  if (!book.value) return
+  savingInfo.value = true
+  try {
+    book.value = await bookshelfApi.update(book.value.id, payload)
+    editOpen.value = false
+    message.success('图书信息已更新')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '保存失败')
+  } finally {
+    savingInfo.value = false
   }
 }
 
@@ -64,6 +81,7 @@ onMounted(async () => {
           </div>
           <h1>{{ book.title }}</h1>
           <p class="muted">{{ book.author || '未知作者' }}</p>
+          <p class="description">{{ book.description || '暂无简介' }}</p>
           <n-progress type="line" :percentage="Math.round(book.progress_percentage || 0)" :height="4" :show-indicator="false" />
           <div class="toolbar">
             <n-button type="primary" :disabled="!book.readable" @click="router.push(`/reader/${book.book_id}`)">继续阅读</n-button>
@@ -71,11 +89,23 @@ onMounted(async () => {
               <template #icon><Download :size="16" /></template>
               下载
             </n-button>
+            <n-button secondary @click="editOpen = true">
+              <template #icon><Pencil :size="16" /></template>
+              编辑信息
+            </n-button>
             <n-button secondary @click="router.push('/bookshelf')">返回书架</n-button>
           </div>
         </section>
       </div>
     </n-spin>
+    <BookInfoEditModal
+      v-if="book"
+      v-model:show="editOpen"
+      title="编辑图书信息"
+      :initial="{ title: book.title, author: book.author, description: book.description }"
+      :saving="savingInfo"
+      @save="saveBookInfo"
+    />
   </PageShell>
 </template>
 
@@ -90,6 +120,14 @@ onMounted(async () => {
 .detail-info h1 {
   margin: 12px 0 6px;
   font-size: 28px;
+}
+
+.description {
+  max-width: 720px;
+  margin: 12px 0;
+  color: var(--color-text-main);
+  line-height: 1.7;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 640px) {

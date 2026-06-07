@@ -20,7 +20,7 @@ services:
 
   backend:
     build:
-      context: ../backend
+      context: ..
     container_name: book-reader-test-backend
     restart: unless-stopped
     depends_on:

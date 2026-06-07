@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useDialog, useMessage } from 'naive-ui'
-import { ArrowLeft, Download, Eye, EyeOff, Plus } from 'lucide-vue-next'
+import { ArrowLeft, Download, Eye, EyeOff, Pencil, Plus } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import BookCover from '@/components/book/BookCover.vue'
+import BookInfoEditModal, { type BookInfoEditPayload } from '@/components/book/BookInfoEditModal.vue'
 import BookTitle from '@/components/book/BookTitle.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PageShell from '@/components/common/PageShell.vue'
@@ -21,6 +22,8 @@ const books = ref<LibraryBook[]>([])
 const loading = ref(false)
 const statusChangingId = ref<number | null>(null)
 const downloadingId = ref<number | null>(null)
+const editingBook = ref<LibraryBook | null>(null)
+const savingInfo = ref(false)
 const pagination = ref<Pagination>({ page: 1, page_size: 12, total: 0 })
 const filters = reactive({
   status: 'all' as OwnLibraryStatusFilter
@@ -104,6 +107,21 @@ async function downloadBook(book: LibraryBook) {
   }
 }
 
+async function saveBookInfo(payload: BookInfoEditPayload) {
+  if (!editingBook.value) return
+  savingInfo.value = true
+  try {
+    const updated = await libraryApi.update(editingBook.value.id, payload)
+    replaceBook(updated)
+    editingBook.value = null
+    message.success('图书信息已更新')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '保存失败')
+  } finally {
+    savingInfo.value = false
+  }
+}
+
 onMounted(() => fetchPage())
 </script>
 
@@ -177,6 +195,14 @@ onMounted(() => fetchPage())
                 </template>
                 {{ book.library_status === 'approved' ? '下架' : '上架' }}
               </n-button>
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <n-button size="small" secondary circle @click="editingBook = book">
+                    <Pencil :size="15" />
+                  </n-button>
+                </template>
+                编辑信息
+              </n-tooltip>
               <n-button size="small" secondary @click="router.push(`/library/${book.id}`)">详情</n-button>
             </div>
           </div>
@@ -184,6 +210,14 @@ onMounted(() => fetchPage())
       </div>
     </n-spin>
     <PaginationBar :pagination="pagination" @change="fetchPage" />
+    <BookInfoEditModal
+      :show="Boolean(editingBook)"
+      title="编辑公共图书信息"
+      :initial="editingBook ? { title: editingBook.title, author: editingBook.author, description: editingBook.description } : null"
+      :saving="savingInfo"
+      @update:show="($event) => { if (!$event) editingBook = null }"
+      @save="saveBookInfo"
+    />
   </PageShell>
 </template>
 

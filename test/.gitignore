@@ -1,6 +1,0 @@
-.DS_Store
-backend-data/
-backend-build/
-go-build-cache/
-postgres/data/
-tmp/

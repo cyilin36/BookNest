@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Download } from 'lucide-vue-next'
+import { Download, Pencil } from 'lucide-vue-next'
 import { useDialog, useMessage } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import PageShell from '@/components/common/PageShell.vue'
 import BookCover from '@/components/book/BookCover.vue'
+import BookInfoEditModal, { type BookInfoEditPayload } from '@/components/book/BookInfoEditModal.vue'
 import FormatTag from '@/components/book/FormatTag.vue'
 import { libraryApi } from '@/api/library'
 import { useAuthStore } from '@/stores/auth'
@@ -21,6 +22,8 @@ const loading = ref(false)
 const joining = ref(false)
 const statusChanging = ref(false)
 const downloading = ref(false)
+const editOpen = ref(false)
+const savingInfo = ref(false)
 
 const isOwner = computed(() => Boolean(book.value && auth.user?.id === book.value.owner_user_id))
 const canJoin = computed(() => Boolean(book.value && book.value.library_status === 'approved' && !book.value.in_bookshelf))
@@ -53,6 +56,20 @@ async function downloadBook() {
     message.error(error instanceof Error ? error.message : '下载失败')
   } finally {
     downloading.value = false
+  }
+}
+
+async function saveBookInfo(payload: BookInfoEditPayload) {
+  if (!book.value || !isOwner.value) return
+  savingInfo.value = true
+  try {
+    book.value = await libraryApi.update(book.value.id, payload)
+    editOpen.value = false
+    message.success('图书信息已更新')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '保存失败')
+  } finally {
+    savingInfo.value = false
   }
 }
 
@@ -115,11 +132,23 @@ onMounted(async () => {
             <n-button v-if="canChangeStatus" secondary type="warning" :loading="statusChanging" @click="confirmStatusChange">
               {{ book.library_status === 'hidden' ? '上架' : '下架' }}
             </n-button>
+            <n-button v-if="isOwner" secondary @click="editOpen = true">
+              <template #icon><Pencil :size="16" /></template>
+              编辑信息
+            </n-button>
             <n-button secondary @click="router.push('/library')">返回图书馆</n-button>
           </div>
         </section>
       </div>
     </n-spin>
+    <BookInfoEditModal
+      v-if="book && isOwner"
+      v-model:show="editOpen"
+      title="编辑公共图书信息"
+      :initial="{ title: book.title, author: book.author, description: book.description }"
+      :saving="savingInfo"
+      @save="saveBookInfo"
+    />
   </PageShell>
 </template>
 

@@ -103,6 +103,7 @@ export interface BookshelfItem {
   book_id: number
   title: string
   author: string | null
+  description: string | null
   format: BookFormat
   cover_url: string | null
   source_type: BookshelfSourceType

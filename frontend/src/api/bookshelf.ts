@@ -10,6 +10,9 @@ export interface BookshelfQuery extends PageQuery {
 }
 
 export interface UpdateBookshelfItemRequest {
+  title?: string
+  author?: string | null
+  description?: string | null
   personal_title?: string | null
   personal_category_id?: number | null
   favorite?: boolean

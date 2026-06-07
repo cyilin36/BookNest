@@ -27,18 +27,20 @@ type Book struct {
 func (Book) TableName() string { return "books" }
 
 type Bookshelf struct {
-	ID                 int64      `gorm:"column:id;primaryKey" json:"id"`
-	UserID             int64      `gorm:"column:user_id" json:"-"`
-	BookID             int64      `gorm:"column:book_id" json:"book_id"`
-	SourceType         string     `gorm:"column:source_type" json:"source_type"`
-	Status             string     `gorm:"column:status" json:"-"`
-	Favorite           bool       `gorm:"column:favorite" json:"favorite"`
-	Pinned             bool       `gorm:"column:pinned" json:"pinned"`
-	PersonalTitle      *string    `gorm:"column:personal_title" json:"-"`
-	PersonalCategoryID *int64     `gorm:"column:personal_category_id" json:"-"`
-	AddedAt            time.Time  `gorm:"column:added_at" json:"added_at"`
-	LastReadAt         *time.Time `gorm:"column:last_read_at" json:"last_read_at"`
-	RemovedAt          *time.Time `gorm:"column:removed_at" json:"-"`
+	ID                  int64      `gorm:"column:id;primaryKey" json:"id"`
+	UserID              int64      `gorm:"column:user_id" json:"-"`
+	BookID              int64      `gorm:"column:book_id" json:"book_id"`
+	SourceType          string     `gorm:"column:source_type" json:"source_type"`
+	Status              string     `gorm:"column:status" json:"-"`
+	Favorite            bool       `gorm:"column:favorite" json:"favorite"`
+	Pinned              bool       `gorm:"column:pinned" json:"pinned"`
+	PersonalTitle       *string    `gorm:"column:personal_title" json:"-"`
+	PersonalAuthor      *string    `gorm:"column:personal_author" json:"-"`
+	PersonalDescription *string    `gorm:"column:personal_description" json:"-"`
+	PersonalCategoryID  *int64     `gorm:"column:personal_category_id" json:"-"`
+	AddedAt             time.Time  `gorm:"column:added_at" json:"added_at"`
+	LastReadAt          *time.Time `gorm:"column:last_read_at" json:"last_read_at"`
+	RemovedAt           *time.Time `gorm:"column:removed_at" json:"-"`
 }
 
 func (Bookshelf) TableName() string { return "bookshelves" }

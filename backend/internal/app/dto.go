@@ -29,6 +29,7 @@ type BookshelfItemDTO struct {
 	BookID             int64      `json:"book_id"`
 	Title              string     `json:"title"`
 	Author             *string    `json:"author"`
+	Description        *string    `json:"description"`
 	Format             string     `json:"format"`
 	CoverURL           *string    `json:"cover_url"`
 	SourceType         string     `json:"source_type"`

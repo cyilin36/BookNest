@@ -260,6 +260,7 @@ func (s *Server) bookshelfList(c *gin.Context) {
 		BookID2            int64 `gorm:"column:book_id2"`
 		Title              string
 		Author             *string
+		Description        *string
 		Format             string
 		FilePath           string
 		CoverPath          *string
@@ -270,7 +271,7 @@ func (s *Server) bookshelfList(c *gin.Context) {
 	}
 	var rows []row
 	order := bookshelfOrder(sortBy, orderBy)
-	err := q.Select("bs.*, b.id AS book_id2, b.title, b.author, b.format, b.file_path, b.cover_path, b.visibility, b.library_status, b.deleted_at, rp.percentage AS progress_percentage").
+	err := q.Select("bs.*, b.id AS book_id2, b.title, b.author, b.description, b.format, b.file_path, b.cover_path, b.visibility, b.library_status, b.deleted_at, rp.percentage AS progress_percentage").
 		Joins("LEFT JOIN reading_progress rp ON rp.user_id = bs.user_id AND rp.book_id = bs.book_id").
 		Order(order).Offset((page - 1) * size).Limit(size).Scan(&rows).Error
 	if err != nil {
@@ -279,7 +280,7 @@ func (s *Server) bookshelfList(c *gin.Context) {
 	}
 	out := make([]BookshelfItemDTO, 0, len(rows))
 	for _, r := range rows {
-		b := model.Book{ID: r.BookID2, Title: r.Title, Author: r.Author, Format: r.Format, FilePath: r.FilePath, CoverPath: r.CoverPath, Visibility: r.Visibility, LibraryStatus: r.LibraryStatus, DeletedAt: r.DeletedAt}
+		b := model.Book{ID: r.BookID2, Title: r.Title, Author: r.Author, Description: r.Description, Format: r.Format, FilePath: r.FilePath, CoverPath: r.CoverPath, Visibility: r.Visibility, LibraryStatus: r.LibraryStatus, DeletedAt: r.DeletedAt}
 		out = append(out, s.bookshelfDTO(r.Bookshelf, b, r.ProgressPercentage))
 	}
 	common.RespondPage(c, middleware.GetRequestID(c), out, page, size, total)
@@ -314,7 +315,7 @@ func (s *Server) downloadBookshelfBook(c *gin.Context) {
 		return
 	}
 	displayTitle := book.Title
-	if item.PersonalTitle != nil && strings.TrimSpace(*item.PersonalTitle) != "" {
+	if item.SourceType == model.BookshelfSourceLibrary && item.PersonalTitle != nil && strings.TrimSpace(*item.PersonalTitle) != "" {
 		displayTitle = *item.PersonalTitle
 	}
 	s.downloadBookFile(c, book, displayTitle)
@@ -331,18 +332,53 @@ func (s *Server) updateBookshelf(c *gin.Context) {
 		return
 	}
 	u := middleware.CurrentUser(c)
+	item, book, err := s.getBookshelfWithBook(u.ID, id)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
 	updates := map[string]any{}
-	if v, exists := raw["personal_title"]; exists {
-		if isJSONNull(v) {
-			updates["personal_title"] = nil
-		} else {
-			var title string
-			if err := json.Unmarshal(v, &title); err != nil {
-				common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
-				return
-			}
-			updates["personal_title"] = strings.TrimSpace(title)
+	bookUpdates := map[string]any{}
+	if v, exists := bookInfoRaw(raw, "title"); exists {
+		title, err := requiredString(v)
+		if err != nil {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
 		}
+		if item.SourceType == model.BookshelfSourceUploaded && book.Visibility == model.BookVisibilityPrivate {
+			bookUpdates["title"] = title
+		} else {
+			updates["personal_title"] = title
+		}
+	}
+	if v, exists := raw["author"]; exists {
+		author, err := nullableTrimmedString(v)
+		if err != nil {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+		if item.SourceType == model.BookshelfSourceUploaded && book.Visibility == model.BookVisibilityPrivate {
+			bookUpdates["author"] = author
+		} else {
+			updates["personal_author"] = author
+		}
+	}
+	if v, exists := raw["description"]; exists {
+		description, err := nullableTrimmedString(v)
+		if err != nil {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+		if item.SourceType == model.BookshelfSourceUploaded && book.Visibility == model.BookVisibilityPrivate {
+			bookUpdates["description"] = description
+		} else {
+			updates["personal_description"] = description
+		}
+	}
+	_, updatesPersonalAuthor := updates["personal_author"]
+	_, updatesPersonalDescription := updates["personal_description"]
+	if item.SourceType == model.BookshelfSourceLibrary && item.PersonalTitle == nil && (updatesPersonalAuthor || updatesPersonalDescription) {
+		updates["personal_title"] = book.Title
 	}
 	if v, exists := raw["personal_category_id"]; exists {
 		if isJSONNull(v) {
@@ -394,17 +430,31 @@ func (s *Server) updateBookshelf(c *gin.Context) {
 			return
 		}
 	}
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&model.Bookshelf{}).Where("id = ? AND user_id = ? AND status = ?", id, u.ID, model.BookshelfStatusActive).Updates(updates)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if len(updates) > 0 {
+			res := tx.Model(&model.Bookshelf{}).Where("id = ? AND user_id = ? AND status = ?", id, u.ID, model.BookshelfStatusActive).Updates(updates)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return common.ErrNotFound
+			}
+		} else {
 			var count int64
 			if err := tx.Model(&model.Bookshelf{}).Where("id = ? AND user_id = ? AND status = ?", id, u.ID, model.BookshelfStatusActive).Count(&count).Error; err != nil {
 				return err
 			}
 			if count == 0 {
+				return common.ErrNotFound
+			}
+		}
+		if len(bookUpdates) > 0 {
+			bookUpdates["updated_at"] = time.Now()
+			res := tx.Model(&model.Book{}).Where("id = ? AND owner_user_id = ? AND visibility = ? AND deleted_at IS NULL", book.ID, u.ID, model.BookVisibilityPrivate).Updates(bookUpdates)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
 				return common.ErrNotFound
 			}
 		}
@@ -428,7 +478,7 @@ func (s *Server) updateBookshelf(c *gin.Context) {
 		common.RespondError(c, middleware.GetRequestID(c), err)
 		return
 	}
-	item, book, err := s.getBookshelfWithBook(u.ID, id)
+	item, book, err = s.getBookshelfWithBook(u.ID, id)
 	if err != nil {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
 		return
@@ -572,7 +622,10 @@ func (s *Server) addLibrary(c *gin.Context, bookID int64) {
 		return
 	}
 	now := time.Now()
-	item := model.Bookshelf{UserID: u.ID, BookID: b.ID, SourceType: model.BookshelfSourceLibrary, Status: model.BookshelfStatusActive, AddedAt: now}
+	item := model.Bookshelf{
+		UserID: u.ID, BookID: b.ID, SourceType: model.BookshelfSourceLibrary, Status: model.BookshelfStatusActive, AddedAt: now,
+		PersonalTitle: &b.Title, PersonalAuthor: b.Author, PersonalDescription: b.Description,
+	}
 	if err := s.db.Create(&item).Error; err != nil {
 		common.RespondError(c, middleware.GetRequestID(c), err)
 		return
@@ -728,6 +781,51 @@ func (s *Server) downloadLibraryBook(c *gin.Context) {
 		return
 	}
 	s.downloadBookFile(c, b, b.Title)
+}
+
+func (s *Server) updateOwnLibraryBook(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	var raw map[string]json.RawMessage
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
+		return
+	}
+	updates, err := bookBodyUpdates(raw)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if len(updates) == 0 {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
+		return
+	}
+	u := middleware.CurrentUser(c)
+	updates["updated_at"] = time.Now()
+	res := s.db.Model(&model.Book{}).Where("id = ? AND visibility = ? AND owner_user_id = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic, u.ID).Updates(updates)
+	if res.Error != nil {
+		common.RespondError(c, middleware.GetRequestID(c), res.Error)
+		return
+	}
+	if res.RowsAffected == 0 {
+		var count int64
+		if err := s.db.Model(&model.Book{}).Where("id = ? AND visibility = ? AND owner_user_id = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic, u.ID).Count(&count).Error; err != nil {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+		if count == 0 {
+			common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
+			return
+		}
+	}
+	var b model.Book
+	if err := s.db.First(&b, "id = ? AND visibility = ?", id, model.BookVisibilityPublic).Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
+		return
+	}
+	common.RespondJSON(c, middleware.GetRequestID(c), s.libraryDTO(b, u.Username, s.activeBookshelfID(u.ID, b.ID)))
 }
 
 func (s *Server) hideOwnLibraryBook(c *gin.Context) {
@@ -921,6 +1019,73 @@ func isJSONNull(raw json.RawMessage) bool {
 	return strings.EqualFold(strings.TrimSpace(string(raw)), "null")
 }
 
+func bookInfoRaw(raw map[string]json.RawMessage, key string) (json.RawMessage, bool) {
+	if v, exists := raw[key]; exists {
+		return v, true
+	}
+	if key == "title" {
+		v, exists := raw["personal_title"]
+		return v, exists
+	}
+	return nil, false
+}
+
+func requiredString(raw json.RawMessage) (string, error) {
+	if isJSONNull(raw) {
+		return "", common.ErrValidationFailed
+	}
+	var v string
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return "", common.ErrValidationFailed
+	}
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", common.ErrValidationFailed
+	}
+	return v, nil
+}
+
+func nullableTrimmedString(raw json.RawMessage) (*string, error) {
+	if isJSONNull(raw) {
+		return nil, nil
+	}
+	var v string
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, common.ErrValidationFailed
+	}
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil, nil
+	}
+	return &v, nil
+}
+
+func bookBodyUpdates(raw map[string]json.RawMessage) (map[string]any, error) {
+	updates := map[string]any{}
+	if v, exists := bookInfoRaw(raw, "title"); exists {
+		title, err := requiredString(v)
+		if err != nil {
+			return nil, err
+		}
+		updates["title"] = title
+	}
+	if v, exists := raw["author"]; exists {
+		author, err := nullableTrimmedString(v)
+		if err != nil {
+			return nil, err
+		}
+		updates["author"] = author
+	}
+	if v, exists := raw["description"]; exists {
+		description, err := nullableTrimmedString(v)
+		if err != nil {
+			return nil, err
+		}
+		updates["description"] = description
+	}
+	return updates, nil
+}
+
 func (s *Server) getBookshelfWithBook(userID, id int64) (model.Bookshelf, model.Book, error) {
 	var item model.Bookshelf
 	if err := s.db.First(&item, "id = ? AND user_id = ? AND status = ?", id, userID, model.BookshelfStatusActive).Error; err != nil {
@@ -935,8 +1100,12 @@ func (s *Server) getBookshelfWithBook(userID, id int64) (model.Bookshelf, model.
 
 func (s *Server) bookshelfDTO(item model.Bookshelf, b model.Book, progress *float64) BookshelfItemDTO {
 	title := b.Title
-	if item.PersonalTitle != nil && strings.TrimSpace(*item.PersonalTitle) != "" {
+	author := b.Author
+	description := b.Description
+	if item.SourceType == model.BookshelfSourceLibrary && item.PersonalTitle != nil {
 		title = *item.PersonalTitle
+		author = item.PersonalAuthor
+		description = item.PersonalDescription
 	}
 	readable := true
 	var reason *string
@@ -959,7 +1128,7 @@ func (s *Server) bookshelfDTO(item model.Bookshelf, b model.Book, progress *floa
 			reason = &r
 		}
 	}
-	return BookshelfItemDTO{ID: item.ID, BookID: b.ID, Title: title, Author: b.Author, Format: b.Format, CoverURL: coverURL(b.ID, b.CoverPath), SourceType: item.SourceType, Visibility: b.Visibility, LibraryStatus: b.LibraryStatus, Favorite: item.Favorite, Pinned: item.Pinned, LastReadAt: item.LastReadAt, AddedAt: item.AddedAt, Readable: readable, UnreadableReason: reason, ProgressPercentage: progress}
+	return BookshelfItemDTO{ID: item.ID, BookID: b.ID, Title: title, Author: author, Description: description, Format: b.Format, CoverURL: coverURL(b.ID, b.CoverPath), SourceType: item.SourceType, Visibility: b.Visibility, LibraryStatus: b.LibraryStatus, Favorite: item.Favorite, Pinned: item.Pinned, LastReadAt: item.LastReadAt, AddedAt: item.AddedAt, Readable: readable, UnreadableReason: reason, ProgressPercentage: progress}
 }
 
 func (s *Server) bookshelfProgressFor(userID, bookID int64) *float64 {

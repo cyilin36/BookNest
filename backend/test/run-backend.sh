@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DATA_DIR="$ROOT_DIR/test/backend-data"
+BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TEST_DIR="$BACKEND_DIR/test"
+DATA_DIR="$TEST_DIR/backend-data"
 
 mkdir -p "$DATA_DIR/books" "$DATA_DIR/covers" "$DATA_DIR/temp"
 
-cd "$ROOT_DIR/backend"
+cd "$BACKEND_DIR"
 
 export DATABASE_DSN="postgres://book_reader:book_reader_password@localhost:15432/book_reader?sslmode=disable"
 export DATA_DIR="$DATA_DIR"

@@ -9,6 +9,12 @@ export interface LibraryQuery extends PageQuery {
   status?: Extract<LibraryStatus, 'approved' | 'hidden'>
 }
 
+export interface UpdateLibraryBookInfoRequest {
+  title?: string
+  author?: string | null
+  description?: string | null
+}
+
 export const libraryApi = {
   list(query: LibraryQuery = {}) {
     return unwrapPage<LibraryBook>(apiClient.get('/library/books', { params: query }))
@@ -18,6 +24,9 @@ export const libraryApi = {
   },
   download(id: number) {
     return apiClient.get<Blob>(`/library/books/${id}/download`, { responseType: 'blob' })
+  },
+  update(id: number, payload: UpdateLibraryBookInfoRequest) {
+    return unwrap<LibraryBook>(apiClient.patch(`/library/books/${id}`, payload))
   },
   upload(formData: FormData) {
     return unwrap<LibraryBook>(apiClient.post('/library/books/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }))
