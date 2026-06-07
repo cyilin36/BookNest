@@ -5,17 +5,85 @@
 }
 
 .reader-content {
+  max-width: 100%;
+  overflow-x: hidden;
   font-family: var(--font-reader);
   font-size: var(--reader-font-size, 18px);
   line-height: var(--reader-line-height, 1.8);
   text-align: justify;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  word-wrap: break-word !important;
+}
+
+.reader-content,
+.reader-content * {
+  box-sizing: border-box;
+  max-width: 100% !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  word-wrap: break-word !important;
+}
+
+.reader-content :where(p, div, span, section, article, header, footer, main, aside, blockquote, li, dd, dt, h1, h2, h3, h4, h5, h6, a, strong, em, b, i, small) {
+  min-width: 0 !important;
+  white-space: normal !important;
 }
 
 .reader-content p {
   margin: 0 0 1.1em;
 }
 
-.reader-content img {
+.reader-content a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.reader-content img,
+.reader-content svg,
+.reader-content video,
+.reader-content iframe,
+.reader-content canvas {
+  display: block;
   max-width: 100%;
   height: auto;
+}
+
+.reader-content pre {
+  max-width: 100% !important;
+  padding: 0.75em;
+  overflow-x: auto;
+  white-space: pre-wrap !important;
+}
+
+.reader-content code,
+.reader-content kbd,
+.reader-content samp {
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}
+
+.reader-content table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.reader-content tbody,
+.reader-content thead,
+.reader-content tfoot,
+.reader-content tr {
+  max-width: 100%;
+}
+
+.reader-content td,
+.reader-content th {
+  min-width: 0 !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
 }

@@ -639,6 +639,7 @@ frontend/src/views/reader/ReaderView.vue
 - `content_type='html'` 使用 `v-html` 展示 HTML 内容。
 - `content_type='text'` 使用 `v-text` 纯文本展示，并通过 `white-space: pre-wrap` 保留 TXT 换行和段落空白。
 - PDF 当前依赖后端生成的章节 HTML，不是完整 pdf.js 页面渲染。
+- 阅读器正文全局样式必须防止横向撑破阅读区域：`.reader-content` 及其后代统一使用 `max-width: 100%`、`overflow-wrap: anywhere`、`word-break: break-word`；`pre/code` 使用 `pre-wrap`；`table` 限制在容器内横向滚动；图片和嵌入媒体不得超过正文宽度。
 
 ### 管理后台
 

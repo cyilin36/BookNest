@@ -416,12 +416,17 @@ watch(
 
 .reader-panel {
   position: relative;
+  max-width: 100%;
+  overflow: hidden;
   min-height: 54vh;
 }
 
 .reader-content-text {
+  max-width: 100%;
+  overflow-x: hidden;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
 }
 
 .reader-tap-zones {
