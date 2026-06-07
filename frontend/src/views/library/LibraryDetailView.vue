@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { Download } from 'lucide-vue-next'
 import { useDialog, useMessage } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import PageShell from '@/components/common/PageShell.vue'
@@ -7,6 +8,7 @@ import BookCover from '@/components/book/BookCover.vue'
 import FormatTag from '@/components/book/FormatTag.vue'
 import { libraryApi } from '@/api/library'
 import { useAuthStore } from '@/stores/auth'
+import { createBookDownloadName, downloadBlob } from '@/utils/download'
 import type { LibraryBook } from '@/api/types'
 
 const props = defineProps<{ id: string }>()
@@ -18,9 +20,11 @@ const book = ref<LibraryBook | null>(null)
 const loading = ref(false)
 const joining = ref(false)
 const statusChanging = ref(false)
+const downloading = ref(false)
 
 const isOwner = computed(() => Boolean(book.value && auth.user?.id === book.value.owner_user_id))
 const canJoin = computed(() => Boolean(book.value && book.value.library_status === 'approved' && !book.value.in_bookshelf))
+const canDownload = computed(() => Boolean(book.value && book.value.library_status === 'approved'))
 const canChangeStatus = computed(() => Boolean(book.value && isOwner.value && book.value.library_status !== 'deleted'))
 
 async function join() {
@@ -35,6 +39,20 @@ async function join() {
     message.error(error instanceof Error ? error.message : '加入失败')
   } finally {
     joining.value = false
+  }
+}
+
+async function downloadBook() {
+  if (!book.value || !canDownload.value) return
+  downloading.value = true
+  try {
+    const response = await libraryApi.download(book.value.id)
+    downloadBlob(response, createBookDownloadName(book.value.title, book.value.format))
+    message.success('已开始下载')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '下载失败')
+  } finally {
+    downloading.value = false
   }
 }
 
@@ -90,6 +108,10 @@ onMounted(async () => {
               {{ book.in_bookshelf ? '已在书架' : book.library_status === 'hidden' ? '已下架' : '加入书架' }}
             </n-button>
             <n-button v-if="book.bookshelf_id" secondary @click="router.push(`/reader/${book.id}`)">阅读</n-button>
+            <n-button secondary :disabled="!canDownload" :loading="downloading" @click="downloadBook">
+              <template #icon><Download :size="16" /></template>
+              下载
+            </n-button>
             <n-button v-if="canChangeStatus" secondary type="warning" :loading="statusChanging" @click="confirmStatusChange">
               {{ book.library_status === 'hidden' ? '上架' : '下架' }}
             </n-button>

@@ -69,6 +69,7 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	authRoutes.POST("/bookshelf/upload", middleware.BodyLimit(int64(s.cfg.RequestBodyLimitMB)*1024*1024), s.uploadPrivateBook)
 	authRoutes.GET("/bookshelf", s.bookshelfList)
 	authRoutes.GET("/bookshelf/:id", s.bookshelfDetail)
+	authRoutes.GET("/bookshelf/:id/download", s.downloadBookshelfBook)
 	authRoutes.PATCH("/bookshelf/:id", s.updateBookshelf)
 	authRoutes.DELETE("/bookshelf/:id", s.deleteBookshelf)
 	authRoutes.POST("/bookshelf/from-library/:bookId", s.addLibraryBookToShelf)
@@ -76,6 +77,7 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 
 	authRoutes.GET("/library/books", s.libraryList)
 	authRoutes.GET("/library/books/:id", s.libraryDetail)
+	authRoutes.GET("/library/books/:id/download", s.downloadLibraryBook)
 	authRoutes.POST("/library/books/upload", middleware.BodyLimit(int64(s.cfg.RequestBodyLimitMB)*1024*1024), s.uploadPublicBook)
 	authRoutes.POST("/library/books/:id/hide", s.hideOwnLibraryBook)
 	authRoutes.POST("/library/books/:id/show", s.showOwnLibraryBook)

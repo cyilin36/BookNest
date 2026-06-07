@@ -27,6 +27,9 @@ export const bookshelfApi = {
   detail(id: number) {
     return unwrap<BookshelfItem>(apiClient.get(`/bookshelf/${id}`))
   },
+  download(id: number) {
+    return apiClient.get<Blob>(`/bookshelf/${id}/download`, { responseType: 'blob' })
+  },
   update(id: number, payload: UpdateBookshelfItemRequest) {
     return unwrap<BookshelfItem>(apiClient.patch(`/bookshelf/${id}`, payload))
   },

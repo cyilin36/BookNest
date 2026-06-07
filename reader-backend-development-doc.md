@@ -1109,6 +1109,7 @@ tag_ids=<optional comma separated>
 ```http
 GET    /api/v1/bookshelf
 GET    /api/v1/bookshelf/:id
+GET    /api/v1/bookshelf/:id/download
 PATCH  /api/v1/bookshelf/:id
 DELETE /api/v1/bookshelf/:id
 ```
@@ -1174,6 +1175,17 @@ pinned desc, last_read_at desc nulls last, added_at desc
 - 私有图书删除成功后，数据库不再保留该图书条目和相关个人数据，效果等同从未添加过该图书。
 - 私有文件物理删除失败时，撤销 `books.deleted_at` 删除标记，并返回 `book_file_delete_failed`，前端应提示用户稍后重试。
 
+下载规则：
+
+- `GET /api/v1/bookshelf/:id/download` 只能下载当前用户自己的 active 书架项。
+- 私有上传图书只要求当前用户拥有该书架项。
+- 公共图书馆引用要求该书仍为 `library_status='approved'`、`deleted_at IS NULL`。
+- 下载内容是原始图书文件，不重新转码或修改文件内容。
+- 响应头使用 `Content-Disposition: attachment`。
+- 下载文件名使用书架上展示的标题；若存在 `personal_title` 则优先使用，否则使用图书标题。
+- 扩展名使用图书 `format`。
+- 文件名中的路径分隔符、控制字符和常见非法文件名字符会被替换或移除。
+
 ### 13.3 从公共图书加入书架
 
 ```http
@@ -1199,6 +1211,7 @@ POST /api/v1/library/books/:id/add-to-bookshelf
 ```http
 GET  /api/v1/library/books
 GET  /api/v1/library/books/:id
+GET  /api/v1/library/books/:id/download
 POST /api/v1/library/books/upload
 POST /api/v1/library/books/:id/hide
 POST /api/v1/library/books/:id/show
@@ -1246,6 +1259,15 @@ order=asc|desc
 - `books.library_status='approved'`
 - 文件路径：`books/public/{book_id}.{ext}`。
 - 不自动给上传者创建书架记录。
+
+下载公共图书馆图书：
+
+- 只允许下载 `visibility='public'`、`library_status='approved'`、`deleted_at IS NULL` 的公共图书。
+- `hidden`、`deleted` 或已被管理员物理删除的公共图书不可下载。
+- 下载内容是原始图书文件，不重新转码或修改文件内容。
+- 响应头使用 `Content-Disposition: attachment`。
+- 下载文件名使用公共图书馆展示标题，扩展名使用图书 `format`。
+- 文件名中的路径分隔符、控制字符和常见非法文件名字符会被替换或移除。
 
 下架自己上传的公共图书：
 
@@ -1510,10 +1532,12 @@ PUT /api/v1/admin/system/settings
 /api/v1/bookshelf
 /api/v1/bookshelf/:id
 /api/v1/bookshelf/upload
+/api/v1/bookshelf/:id/download
 /api/v1/bookshelf/from-library/:bookId
 
 /api/v1/library/books
 /api/v1/library/books/:id
+/api/v1/library/books/:id/download
 /api/v1/library/books/upload
 /api/v1/library/books/:id/hide
 /api/v1/library/books/:id/show
@@ -1568,7 +1592,9 @@ DELETE /api/v1/admin/users/:id
 上传私有图书                   否    是        是
 查看自己的书架                 否    是        是
 阅读自己的私有图书             否    是        是
+下载自己的书架图书             否    是        是
 浏览 approved 公共图书         否    是        是
+下载 approved 公共图书         否    是        是
 上传公共图书                   否    是        是
 下架自己上传公共图书           否    是        是
 重新上架自己上传公共图书       否    是        是

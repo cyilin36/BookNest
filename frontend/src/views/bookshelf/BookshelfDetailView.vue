@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { Download } from 'lucide-vue-next'
+import { useMessage } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import PageShell from '@/components/common/PageShell.vue'
 import BookCover from '@/components/book/BookCover.vue'
 import FormatTag from '@/components/book/FormatTag.vue'
 import { bookshelfApi } from '@/api/bookshelf'
+import { createBookDownloadName, downloadBlob } from '@/utils/download'
 import type { BookshelfItem } from '@/api/types'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
+const message = useMessage()
 const book = ref<BookshelfItem | null>(null)
 const loading = ref(false)
+const downloading = ref(false)
 
 function formatUnreadableReason(reason: BookshelfItem['unreadable_reason']) {
   const labels: Record<NonNullable<BookshelfItem['unreadable_reason']>, string> = {
@@ -20,6 +25,20 @@ function formatUnreadableReason(reason: BookshelfItem['unreadable_reason']) {
     permission_denied: '暂无阅读权限'
   }
   return reason ? labels[reason] : '暂时无法阅读'
+}
+
+async function downloadBook() {
+  if (!book.value || !book.value.readable) return
+  downloading.value = true
+  try {
+    const response = await bookshelfApi.download(book.value.id)
+    downloadBlob(response, createBookDownloadName(book.value.title, book.value.format))
+    message.success('已开始下载')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '下载失败')
+  } finally {
+    downloading.value = false
+  }
 }
 
 onMounted(async () => {
@@ -48,6 +67,10 @@ onMounted(async () => {
           <n-progress type="line" :percentage="Math.round(book.progress_percentage || 0)" :height="4" :show-indicator="false" />
           <div class="toolbar">
             <n-button type="primary" :disabled="!book.readable" @click="router.push(`/reader/${book.book_id}`)">继续阅读</n-button>
+            <n-button secondary :disabled="!book.readable" :loading="downloading" @click="downloadBook">
+              <template #icon><Download :size="16" /></template>
+              下载
+            </n-button>
             <n-button secondary @click="router.push('/bookshelf')">返回书架</n-button>
           </div>
         </section>

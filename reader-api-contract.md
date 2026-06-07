@@ -493,6 +493,26 @@ GET /api/v1/bookshelf/:id
 
 响应：`BookshelfItem`。
 
+### 下载书架图书
+
+```http
+GET /api/v1/bookshelf/:id/download
+```
+
+权限：登录，只能下载自己的 active 书架项。
+
+响应：图书源文件字节。
+
+规则：
+
+- 私有上传图书：当前用户必须拥有该 active 书架项。
+- 公共图书馆引用：当前用户必须拥有该 active 书架项，且公共图书仍为 `library_status='approved'`、`deleted_at IS NULL`。
+- 下载内容是原始图书文件，不重新转码或修改文件内容。
+- 响应头使用 `Content-Disposition: attachment` 触发下载。
+- 下载文件名使用书架上展示的标题；若书架项设置了 `personal_title`，优先使用 `personal_title`，否则使用图书标题。
+- 文件扩展名使用图书 `format`，例如 `.epub`、`.pdf`、`.txt`。
+- 文件名中的路径分隔符、控制字符和常见非法文件名字符会被替换或移除。
+
 ### 编辑书架项
 
 ```http
@@ -585,6 +605,25 @@ GET /api/v1/library/books/:id
 响应：`LibraryBook`。
 
 规则：普通用户可查看 `approved` 图书；上传者可查看自己上传的 `approved` 或 `hidden` 图书。
+
+### 下载公共图书馆图书
+
+```http
+GET /api/v1/library/books/:id/download
+```
+
+权限：登录。
+
+响应：图书源文件字节。
+
+规则：
+
+- 只允许下载 `visibility='public'`、`library_status='approved'`、`deleted_at IS NULL` 的公共图书。
+- `hidden`、`deleted` 或已被管理员物理删除的公共图书不可下载。
+- 下载内容是原始图书文件，不重新转码或修改文件内容。
+- 响应头使用 `Content-Disposition: attachment` 触发下载。
+- 下载文件名使用公共图书馆展示标题，扩展名使用图书 `format`。
+- 文件名中的路径分隔符、控制字符和常见非法文件名字符会被替换或移除。
 
 ### 上传公共图书
 

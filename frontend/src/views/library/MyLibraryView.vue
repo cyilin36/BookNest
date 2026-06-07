@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useDialog, useMessage } from 'naive-ui'
-import { ArrowLeft, Eye, EyeOff, Plus } from 'lucide-vue-next'
+import { ArrowLeft, Download, Eye, EyeOff, Plus } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import BookCover from '@/components/book/BookCover.vue'
 import BookTitle from '@/components/book/BookTitle.vue'
@@ -9,6 +9,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import PageShell from '@/components/common/PageShell.vue'
 import PaginationBar from '@/components/common/PaginationBar.vue'
 import { libraryApi } from '@/api/library'
+import { createBookDownloadName, downloadBlob } from '@/utils/download'
 import type { LibraryBook, Pagination } from '@/api/types'
 
 type OwnLibraryStatusFilter = 'all' | 'approved' | 'hidden'
@@ -19,6 +20,7 @@ const dialog = useDialog()
 const books = ref<LibraryBook[]>([])
 const loading = ref(false)
 const statusChangingId = ref<number | null>(null)
+const downloadingId = ref<number | null>(null)
 const pagination = ref<Pagination>({ page: 1, page_size: 12, total: 0 })
 const filters = reactive({
   status: 'all' as OwnLibraryStatusFilter
@@ -85,6 +87,23 @@ function confirmStatusChange(book: LibraryBook) {
   })
 }
 
+async function downloadBook(book: LibraryBook) {
+  if (book.library_status !== 'approved') {
+    message.warning('已下架图书不能下载')
+    return
+  }
+  downloadingId.value = book.id
+  try {
+    const response = await libraryApi.download(book.id)
+    downloadBlob(response, createBookDownloadName(book.title, book.format))
+    message.success('已开始下载')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '下载失败')
+  } finally {
+    downloadingId.value = null
+  }
+}
+
 onMounted(() => fetchPage())
 </script>
 
@@ -129,6 +148,21 @@ onMounted(() => fetchPage())
               <n-tag size="small" :type="book.library_status === 'approved' ? 'success' : 'warning'" round>
                 {{ book.library_status === 'approved' ? '已上架' : '已下架' }}
               </n-tag>
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <n-button
+                    size="small"
+                    secondary
+                    circle
+                    :disabled="book.library_status !== 'approved'"
+                    :loading="downloadingId === book.id"
+                    @click="downloadBook(book)"
+                  >
+                    <Download :size="15" />
+                  </n-button>
+                </template>
+                下载
+              </n-tooltip>
               <n-button
                 class="status-button"
                 size="small"
@@ -191,11 +225,13 @@ onMounted(() => fetchPage())
   --book-title-font-size: 15px;
   --book-title-font-weight: 700;
   --book-title-line-height: 21px;
+  --book-title-text-align: center;
 }
 
 .book-author {
   overflow: hidden;
   color: var(--color-text-sec);
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

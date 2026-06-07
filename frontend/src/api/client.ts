@@ -73,9 +73,23 @@ async function refreshAccessToken() {
   return refreshPromise
 }
 
+function headerValue(value: unknown) {
+  return Array.isArray(value) ? String(value[0] || '') : String(value || '')
+}
+
+async function parseBlobError(payload: Blob, contentTypeHeader: unknown) {
+  const contentType = `${payload.type} ${headerValue(contentTypeHeader)}`.toLowerCase()
+  if (!contentType.includes('application/json')) return null
+  try {
+    return JSON.parse(await payload.text()) as APIErrorPayload
+  } catch {
+    return null
+  }
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError<APIErrorPayload>) => {
+  async (error: AxiosError<APIErrorPayload | Blob>) => {
     const original = error.config as (AxiosRequestConfig & { _retry?: boolean; skipAuthRefresh?: boolean }) | undefined
     if (error.response?.status === 401 && original && !original._retry && !original.skipAuthRefresh) {
       original._retry = true
@@ -89,7 +103,8 @@ apiClient.interceptors.response.use(
       }
     }
 
-    const payload = error.response?.data
+    const responsePayload = error.response?.data
+    const payload = responsePayload instanceof Blob ? await parseBlobError(responsePayload, error.response?.headers?.['content-type']) : responsePayload
     if (payload?.error) {
       throw new AppAPIError(payload.error.message, payload.error.code, payload.request_id, error.response?.status)
     }

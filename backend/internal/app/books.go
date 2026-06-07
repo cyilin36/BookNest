@@ -298,6 +298,28 @@ func (s *Server) bookshelfDetail(c *gin.Context) {
 	common.RespondJSON(c, middleware.GetRequestID(c), s.bookshelfDTO(item, book, s.bookshelfProgressFor(middleware.CurrentUser(c).ID, book.ID)))
 }
 
+func (s *Server) downloadBookshelfBook(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	u := middleware.CurrentUser(c)
+	item, book, err := s.getBookshelfWithBook(u.ID, id)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+	if book.Visibility == model.BookVisibilityPublic && (book.LibraryStatus == nil || *book.LibraryStatus != model.LibraryStatusApproved || book.DeletedAt != nil) {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotAccessible)
+		return
+	}
+	displayTitle := book.Title
+	if item.PersonalTitle != nil && strings.TrimSpace(*item.PersonalTitle) != "" {
+		displayTitle = *item.PersonalTitle
+	}
+	s.downloadBookFile(c, book, displayTitle)
+}
+
 func (s *Server) updateBookshelf(c *gin.Context) {
 	id, ok := parseID(c, "id")
 	if !ok {
@@ -691,6 +713,23 @@ func (s *Server) libraryDetail(c *gin.Context) {
 	common.RespondJSON(c, middleware.GetRequestID(c), s.libraryDTO(b, ownerUsername, bookshelfID))
 }
 
+func (s *Server) downloadLibraryBook(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	var b model.Book
+	if err := s.db.First(&b, "id = ? AND visibility = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic).Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
+		return
+	}
+	if b.LibraryStatus == nil || *b.LibraryStatus != model.LibraryStatusApproved {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotAccessible)
+		return
+	}
+	s.downloadBookFile(c, b, b.Title)
+}
+
 func (s *Server) hideOwnLibraryBook(c *gin.Context) {
 	id, ok := parseID(c, "id")
 	if !ok {
@@ -1010,6 +1049,62 @@ func (s *Server) bookFileExists(book model.Book) bool {
 	}
 	st, err := os.Stat(bookPath)
 	return err == nil && !st.IsDir()
+}
+
+func (s *Server) downloadBookFile(c *gin.Context, book model.Book, displayTitle string) {
+	path, err := s.store.BookPath(book.FilePath)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookFileMissing)
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookFileMissing)
+		return
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || st.IsDir() {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookFileMissing)
+		return
+	}
+	filename := downloadFilename(displayTitle, book.Format)
+	c.Header("Accept-Ranges", "bytes")
+	c.Header("Content-Disposition", contentDispositionAttachment(filename))
+	http.ServeContent(c.Writer, c.Request, filename, st.ModTime(), f)
+}
+
+func downloadFilename(title, format string) string {
+	name := strings.TrimSpace(title)
+	if name == "" {
+		name = "book"
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			b.WriteRune('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	name = strings.TrimSpace(b.String())
+	if name == "" {
+		name = "book"
+	}
+	ext := "." + strings.TrimPrefix(strings.ToLower(format), ".")
+	if !strings.HasSuffix(strings.ToLower(name), ext) {
+		name += ext
+	}
+	return name
+}
+
+func contentDispositionAttachment(filename string) string {
+	escaped := strings.ReplaceAll(filename, `"`, `'`)
+	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, escaped, url.PathEscape(filename))
 }
 
 func (s *Server) readAllowed(u *model.User, bookID int64) (model.Book, error) {

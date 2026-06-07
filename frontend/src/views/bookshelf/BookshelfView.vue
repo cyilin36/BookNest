@@ -8,7 +8,9 @@ import PaginationBar from '@/components/common/PaginationBar.vue'
 import BookCard from '@/components/book/BookCard.vue'
 import { useTaxonomyOptions } from '@/composables/useTaxonomyOptions'
 import { useBookshelfStore } from '@/stores/bookshelf'
-import type { BookFormat, BookshelfSourceType } from '@/api/types'
+import { bookshelfApi } from '@/api/bookshelf'
+import { createBookDownloadName, downloadBlob } from '@/utils/download'
+import type { BookFormat, BookshelfItem, BookshelfSourceType } from '@/api/types'
 
 const store = useBookshelfStore()
 const router = useRouter()
@@ -75,6 +77,20 @@ function confirmRemove(id: number) {
   })
 }
 
+async function downloadBook(book: BookshelfItem) {
+  if (!book.readable) {
+    message.warning('当前图书暂时不可下载')
+    return
+  }
+  try {
+    const response = await bookshelfApi.download(book.id)
+    downloadBlob(response, createBookDownloadName(book.title, book.format))
+    message.success('已开始下载')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '下载失败')
+  }
+}
+
 onMounted(() => {
   if (route.query.forbidden) message.warning('当前账号没有管理权限')
   fetchPage()
@@ -129,6 +145,7 @@ onMounted(() => {
           @read="router.push(`/reader/${book.book_id}`)"
           @toggle-favorite="store.updateBookshelfItem(book.id, { favorite: !book.favorite })"
           @toggle-pinned="store.updateBookshelfItem(book.id, { pinned: !book.pinned })"
+          @download="downloadBook(book)"
           @remove="confirmRemove(book.id)"
         />
       </div>

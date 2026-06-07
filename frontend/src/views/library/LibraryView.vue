@@ -9,7 +9,9 @@ import PaginationBar from '@/components/common/PaginationBar.vue'
 import BookCard from '@/components/book/BookCard.vue'
 import { useTaxonomyOptions } from '@/composables/useTaxonomyOptions'
 import { useLibraryStore } from '@/stores/library'
-import type { BookFormat } from '@/api/types'
+import { libraryApi } from '@/api/library'
+import { createBookDownloadName, downloadBlob } from '@/utils/download'
+import type { BookFormat, LibraryBook } from '@/api/types'
 
 const store = useLibraryStore()
 const router = useRouter()
@@ -42,6 +44,20 @@ async function join(bookId: number) {
     message.success('已加入书架')
   } catch (error) {
     message.error(error instanceof Error ? error.message : '加入失败')
+  }
+}
+
+async function downloadBook(book: LibraryBook) {
+  if (book.library_status !== 'approved') {
+    message.warning('已下架图书不能下载')
+    return
+  }
+  try {
+    const response = await libraryApi.download(book.id)
+    downloadBlob(response, createBookDownloadName(book.title, book.format))
+    message.success('已开始下载')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '下载失败')
   }
 }
 
@@ -101,6 +117,7 @@ onMounted(() => fetchPage())
           mode="library"
           @open="router.push(`/library/${book.id}`)"
           @join="join(book.id)"
+          @download="downloadBook(book)"
         />
       </div>
     </n-spin>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { BookMarked, BookOpenText, Info, Library, Pin, Star, Trash2 } from 'lucide-vue-next'
+import { BookMarked, BookOpenText, Download, Info, Library, Pin, Star, Trash2 } from 'lucide-vue-next'
 import BookCover from './BookCover.vue'
 import BookTitle from './BookTitle.vue'
 import type { BookshelfItem, LibraryBook } from '@/api/types'
@@ -13,6 +13,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   open: []
   read: []
+  download: []
   join: []
   remove: []
   toggleFavorite: []
@@ -64,6 +65,14 @@ const progressLabel = computed(() => `${Math.round(progress.value)}% 已读`)
           </n-tooltip>
           <n-tooltip trigger="hover">
             <template #trigger>
+              <n-button class="icon-action" size="small" quaternary circle :disabled="!book.readable" @click="emit('download')">
+                <Download :size="16" />
+              </n-button>
+            </template>
+            下载
+          </n-tooltip>
+          <n-tooltip trigger="hover">
+            <template #trigger>
               <n-button class="icon-action" size="small" quaternary circle @click="emit('toggleFavorite')">
                 <Star :size="16" :fill="book.favorite ? 'currentColor' : 'none'" />
               </n-button>
@@ -93,6 +102,14 @@ const progressLabel = computed(() => `${Math.round(progress.value)}% 已读`)
           <n-button class="book-primary-action" size="small" type="primary" :disabled="book.in_bookshelf || book.library_status !== 'approved'" @click="emit('join')">
             {{ book.in_bookshelf ? '已在书架' : book.library_status === 'hidden' ? '已下架' : '加入书架' }}
           </n-button>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button size="small" secondary circle :disabled="book.library_status !== 'approved'" @click="emit('download')">
+                <Download :size="16" />
+              </n-button>
+            </template>
+            下载
+          </n-tooltip>
           <n-tooltip trigger="hover">
             <template #trigger>
               <n-button size="small" secondary circle @click="emit('open')">
@@ -174,6 +191,7 @@ const progressLabel = computed(() => `${Math.round(progress.value)}% 已读`)
   --book-title-font-size: 15px;
   --book-title-font-weight: 700;
   --book-title-line-height: 21px;
+  --book-title-text-align: center;
 }
 
 .book-author,
@@ -182,6 +200,7 @@ const progressLabel = computed(() => `${Math.round(progress.value)}% 已读`)
   color: var(--color-text-sec);
   font-size: 15px;
   line-height: 1.25;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

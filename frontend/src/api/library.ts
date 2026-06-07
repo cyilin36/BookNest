@@ -16,6 +16,9 @@ export const libraryApi = {
   detail(id: number) {
     return unwrap<LibraryBook>(apiClient.get(`/library/books/${id}`))
   },
+  download(id: number) {
+    return apiClient.get<Blob>(`/library/books/${id}/download`, { responseType: 'blob' })
+  },
   upload(formData: FormData) {
     return unwrap<LibraryBook>(apiClient.post('/library/books/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }))
   },

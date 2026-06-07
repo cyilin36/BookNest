@@ -97,7 +97,7 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: normal;
-  text-align: left;
+  text-align: var(--book-title-text-align, left);
   letter-spacing: 0;
   cursor: pointer;
   background: transparent;
