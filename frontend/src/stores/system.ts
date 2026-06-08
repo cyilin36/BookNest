@@ -4,7 +4,7 @@ import type { BookFormat } from '@/api/types'
 
 export const useSystemStore = defineStore('system', {
   state: () => ({
-    siteName: 'Book Reader',
+    siteName: 'BookNest',
     allowRegistration: true,
     libraryReviewRequired: false,
     supportedFormats: ['epub', 'pdf', 'txt'] as BookFormat[],

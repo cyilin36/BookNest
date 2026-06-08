@@ -9,7 +9,7 @@ const message = useMessage()
 const loading = ref(false)
 const saving = ref(false)
 const form = reactive<SystemSettings>({
-  site_name: 'Book Reader',
+  site_name: 'BookNest',
   allow_registration: true,
   library_review_required: false,
   max_upload_size_mb: 100,
@@ -45,7 +45,7 @@ onMounted(loadSettings)
     <n-spin :show="loading">
       <n-form class="surface settings-form" label-placement="left" label-width="150" @submit.prevent="saveSettings">
         <n-form-item label="站点名称">
-          <n-input v-model:value="form.site_name" placeholder="Book Reader" />
+          <n-input v-model:value="form.site_name" placeholder="BookNest" />
         </n-form-item>
         <n-form-item label="开放注册">
           <n-switch v-model:value="form.allow_registration" />

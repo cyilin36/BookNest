@@ -36,7 +36,7 @@ func Load() (*Config, error) {
 		AppEnv:        getenv("APP_ENV", "development"),
 		HTTPAddr:      getenv("HTTP_ADDR", ":8080"),
 		PublicBaseURL: getenv("PUBLIC_BASE_URL", ""),
-		DatabaseDSN:   getenv("DATABASE_DSN", "postgres://book_reader:password@localhost:5432/book_reader?sslmode=disable"),
+		DatabaseDSN:   getenv("DATABASE_DSN", "postgres://booknest:password@localhost:5432/booknest?sslmode=disable"),
 		DataDir:       getenv("DATA_DIR", "/data"),
 		JWTSecret:     getenv("JWT_SECRET", "change-me"),
 		LogLevel:      getenv("LOG_LEVEL", "info"),

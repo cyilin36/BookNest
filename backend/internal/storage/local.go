@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"book-reader/backend/internal/config"
+	"booknest/backend/internal/config"
 	"github.com/google/uuid"
 )
 

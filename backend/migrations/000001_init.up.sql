@@ -200,7 +200,7 @@ CREATE TABLE IF NOT EXISTS system_settings (
 INSERT INTO system_settings(key, value) VALUES
   ('allow_registration', 'true'),
   ('library_review_required', 'false'),
-  ('site_name', 'Book Reader'),
+  ('site_name', 'BookNest'),
   ('max_upload_size_mb', '100'),
   ('default_user_storage_quota_mb', '10240')
 ON CONFLICT (key) DO NOTHING;

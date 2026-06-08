@@ -2,6 +2,7 @@
 ._*
 .git
 .gitignore
+.cache
 
 dev/
 
@@ -13,10 +14,13 @@ frontend/coverage
 
 backend/server
 backend/book-reader-server
+backend/booknest-server
 backend/*.test
 backend/coverage.out
 backend/coverage.html
 backend/tmp
+backend/test/postgres/data
+backend/test/backend-data
 backend/data
 backend/books
 backend/covers

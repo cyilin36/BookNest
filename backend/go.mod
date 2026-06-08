@@ -1,4 +1,4 @@
-module book-reader/backend
+module booknest/backend
 
 go 1.25
 

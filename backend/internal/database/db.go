@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"book-reader/backend/internal/config"
+	"booknest/backend/internal/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"

@@ -110,7 +110,6 @@ npm run dev
 ```text
 backend/              Go 后端
 frontend/             Vue 前端
-dev/                  原始 1.0 开发代码快照
 Dockerfile            生产镜像构建文件
 docker-compose.yml    Docker Compose 部署文件
 ```
@@ -118,6 +117,5 @@ docker-compose.yml    Docker Compose 部署文件
 ## 说明
 
 - 第一个注册成功的用户会自动成为管理员。
-- `dev/` 目录是原始开发代码快照，保留用于对照。
 - 公网部署建议放在 HTTPS 反向代理后。
 - 生产环境请妥善备份 `app-data/` 和 `postgres-data/`。

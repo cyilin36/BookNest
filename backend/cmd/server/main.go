@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"book-reader/backend/internal/app"
-	"book-reader/backend/internal/config"
-	"book-reader/backend/internal/database"
-	"book-reader/backend/internal/storage"
+	"booknest/backend/internal/app"
+	"booknest/backend/internal/config"
+	"booknest/backend/internal/database"
+	"booknest/backend/internal/storage"
 )
 
 func main() {

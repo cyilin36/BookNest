@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"book-reader/backend/internal/common"
-	"book-reader/backend/internal/middleware"
-	"book-reader/backend/internal/model"
+	"booknest/backend/internal/common"
+	"booknest/backend/internal/middleware"
+	"booknest/backend/internal/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -592,7 +592,7 @@ func (s *Server) adminUpdateSettings(c *gin.Context) {
 		return
 	}
 	if strings.TrimSpace(req.SiteName) == "" {
-		req.SiteName = "Book Reader"
+		req.SiteName = "BookNest"
 	}
 	if err := s.saveSettings(req); err != nil {
 		common.RespondError(c, middleware.GetRequestID(c), err)

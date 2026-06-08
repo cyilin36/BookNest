@@ -17,7 +17,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"book-reader/backend/internal/model"
+	"booknest/backend/internal/model"
 )
 
 type Result struct {

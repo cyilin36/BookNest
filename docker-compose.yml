@@ -39,8 +39,14 @@ services:
       JWT_SECRET: change-this-secret-before-production
       # 上传的书籍、封面和临时文件在容器内保存到这个目录。
       DATA_DIR: /data
+      BOOKS_DIR: /data/books
+      COVERS_DIR: /data/covers
+      TEMP_DIR: /data/temp
       # 前端构建产物目录，必须与 Dockerfile 中复制 dist 的位置一致。
       FRONTEND_DIST_DIR: /app/frontend/dist
+      # 容器启动时会把 /data 目录权限调整为这个宿主机用户/用户组。
+      PUID: 1000
+      PGID: 1000
       MAX_UPLOAD_SIZE_MB: 100
       REQUEST_BODY_LIMIT_MB: 110
     ports:

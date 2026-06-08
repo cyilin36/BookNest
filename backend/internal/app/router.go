@@ -3,8 +3,8 @@ package app
 import (
 	"log/slog"
 
-	"book-reader/backend/internal/config"
-	"book-reader/backend/internal/middleware"
+	"booknest/backend/internal/config"
+	"booknest/backend/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"book-reader/backend/internal/common"
+	"booknest/backend/internal/common"
 	"github.com/gin-gonic/gin"
 )
 

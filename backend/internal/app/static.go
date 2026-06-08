@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"book-reader/backend/internal/common"
-	"book-reader/backend/internal/middleware"
+	"booknest/backend/internal/common"
+	"booknest/backend/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -19,7 +19,7 @@ func (s *Server) serveFrontend(c *gin.Context) {
 	indexPath := filepath.Join(s.cfg.FrontendDistDir, "index.html")
 	if _, err := os.Stat(indexPath); err != nil {
 		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.String(http.StatusOK, "<!doctype html><html><head><title>Book Reader</title></head><body><div id=\"app\">Book Reader backend is running.</div></body></html>")
+		c.String(http.StatusOK, "<!doctype html><html><head><title>BookNest</title></head><body><div id=\"app\">BookNest backend is running.</div></body></html>")
 		return
 	}
 	requestPath := strings.TrimPrefix(c.Request.URL.Path, "/")

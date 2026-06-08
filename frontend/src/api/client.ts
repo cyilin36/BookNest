@@ -2,7 +2,7 @@ import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 import router from '@/router'
 import type { APIErrorPayload, AuthSession, PaginatedPayload, SuccessPayload } from './types'
 
-const TOKEN_KEY = 'book-reader.access-token'
+const TOKEN_KEY = 'booknest.access-token'
 
 export class AppAPIError extends Error {
   code: string

@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"book-reader/backend/internal/auth"
-	"book-reader/backend/internal/common"
-	"book-reader/backend/internal/config"
-	"book-reader/backend/internal/middleware"
-	"book-reader/backend/internal/model"
-	"book-reader/backend/internal/parser"
-	"book-reader/backend/internal/storage"
+	"booknest/backend/internal/auth"
+	"booknest/backend/internal/common"
+	"booknest/backend/internal/config"
+	"booknest/backend/internal/middleware"
+	"booknest/backend/internal/model"
+	"booknest/backend/internal/parser"
+	"booknest/backend/internal/storage"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -444,7 +444,7 @@ func (s *Server) loadSettings() SystemSettings {
 
 func (s *Server) loadSettingsTx(tx *gorm.DB) SystemSettings {
 	settings := SystemSettings{
-		SiteName: "Book Reader", AllowRegistration: s.cfg.AllowRegistration,
+		SiteName: "BookNest", AllowRegistration: s.cfg.AllowRegistration,
 		LibraryReviewRequired:     s.cfg.LibraryReviewRequired,
 		MaxUploadSizeMB:           s.cfg.MaxUploadSizeMB,
 		DefaultUserStorageQuotaMB: s.cfg.DefaultUserStorageQuotaMB,

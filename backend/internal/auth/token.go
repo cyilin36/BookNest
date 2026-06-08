@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"book-reader/backend/internal/config"
-	"book-reader/backend/internal/model"
+	"booknest/backend/internal/config"
+	"booknest/backend/internal/model"
 	"github.com/golang-jwt/jwt/v5"
 )
 

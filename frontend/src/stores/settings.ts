@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import type { ReaderSettings, ReaderLineHeight, ThemeName } from '@/api/types'
 
-const KEY = 'book-reader.settings'
+const KEY = 'booknest.settings'
 
 const defaults: ReaderSettings = {
   theme: 'modern',

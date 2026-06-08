@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"book-reader/backend/internal/common"
-	"book-reader/backend/internal/middleware"
-	"book-reader/backend/internal/model"
+	"booknest/backend/internal/common"
+	"booknest/backend/internal/middleware"
+	"booknest/backend/internal/model"
 	"github.com/gin-gonic/gin"
 )
 

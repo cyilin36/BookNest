@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"book-reader/backend/internal/model"
+	"booknest/backend/internal/model"
 )
 
 func TestParseTXTChapters(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"book-reader/backend/migrations"
+	"booknest/backend/migrations"
 	"gorm.io/gorm"
 )
 
