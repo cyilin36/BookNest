@@ -69,14 +69,6 @@ onMounted(() => fetchPage())
     <template #actions>
       <n-tooltip trigger="hover">
         <template #trigger>
-          <n-button secondary circle title="我的公共图书馆" @click="router.push('/library/mine')">
-            <Library :size="18" />
-          </n-button>
-        </template>
-        我的公共图书馆
-      </n-tooltip>
-      <n-tooltip trigger="hover">
-        <template #trigger>
           <n-button secondary circle title="搜索和筛选" @click="filterDrawer = true">
             <Search :size="18" />
           </n-button>
@@ -90,6 +82,14 @@ onMounted(() => fetchPage())
           </n-button>
         </template>
         上传公共图书
+      </n-tooltip>
+      <n-tooltip trigger="hover">
+        <template #trigger>
+          <n-button secondary circle title="我的图书馆" @click="router.push('/library/mine')">
+            <Library :size="18" />
+          </n-button>
+        </template>
+        我的图书馆
       </n-tooltip>
     </template>
     <n-drawer v-model:show="filterDrawer" placement="right" :width="320">

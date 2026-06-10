@@ -9,6 +9,7 @@ import BookInfoEditModal, { type BookInfoEditPayload } from '@/components/book/B
 import FormatTag from '@/components/book/FormatTag.vue'
 import { libraryApi } from '@/api/library'
 import { useAuthStore } from '@/stores/auth'
+import { useTaxonomyOptions } from '@/composables/useTaxonomyOptions'
 import { createBookDownloadName, downloadBlob } from '@/utils/download'
 import type { LibraryBook } from '@/api/types'
 
@@ -17,6 +18,7 @@ const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
 const auth = useAuthStore()
+const { categoryOptions, tagOptions, loading: taxonomyLoading } = useTaxonomyOptions()
 const book = ref<LibraryBook | null>(null)
 const loading = ref(false)
 const joining = ref(false)
@@ -29,6 +31,8 @@ const isOwner = computed(() => Boolean(book.value && auth.user?.id === book.valu
 const canJoin = computed(() => Boolean(book.value && book.value.library_status === 'approved' && !book.value.in_bookshelf))
 const canDownload = computed(() => Boolean(book.value && book.value.library_status === 'approved'))
 const canChangeStatus = computed(() => Boolean(book.value && isOwner.value && book.value.library_status !== 'deleted'))
+const categoryLabels = computed(() => (book.value?.category_ids || []).map((id) => categoryOptions.value.find((item) => item.value === id)?.label).filter(Boolean))
+const tagLabels = computed(() => (book.value?.tag_ids || []).map((id) => tagOptions.value.find((item) => item.value === id)?.label).filter(Boolean))
 
 async function join() {
   if (!book.value || !canJoin.value) return
@@ -119,6 +123,10 @@ onMounted(async () => {
           </div>
           <h1>{{ book.title }}</h1>
           <p class="muted">{{ book.author || '未知作者' }} · 上传者 {{ book.owner_username || book.owner_user_id }}</p>
+          <div v-if="categoryLabels.length || tagLabels.length" class="taxonomy-line">
+            <n-tag v-for="label in categoryLabels" :key="`category-${label}`" size="small" round>{{ label }}</n-tag>
+            <n-tag v-for="label in tagLabels" :key="`tag-${label}`" size="small" round>{{ label }}</n-tag>
+          </div>
           <p>{{ book.description || '暂无简介' }}</p>
           <div class="toolbar">
             <n-button type="primary" :disabled="!canJoin" :loading="joining" @click="join">
@@ -145,7 +153,10 @@ onMounted(async () => {
       v-if="book && isOwner"
       v-model:show="editOpen"
       title="编辑公共图书信息"
-      :initial="{ title: book.title, author: book.author, description: book.description }"
+      :initial="{ title: book.title, author: book.author, description: book.description, category_ids: book.category_ids || [], tag_ids: book.tag_ids || [] }"
+      :category-options="categoryOptions"
+      :tag-options="tagOptions"
+      :taxonomy-loading="taxonomyLoading"
       :saving="savingInfo"
       @save="saveBookInfo"
     />
@@ -163,6 +174,13 @@ onMounted(async () => {
 .detail-info h1 {
   margin: 12px 0 6px;
   font-size: 28px;
+}
+
+.taxonomy-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
 }
 
 @media (max-width: 640px) {

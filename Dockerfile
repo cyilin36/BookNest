@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/booknes
 FROM alpine:3.22
 
 RUN apk add --no-cache su-exec \
-	&& mkdir -p /app/frontend/dist /data/books /data/covers /data/temp
+	&& mkdir -p /app/frontend/dist /data/books /data/covers /data/assets /data/temp
 
 WORKDIR /app
 COPY --from=backend-build /out/booknest-server /app/booknest-server
@@ -30,6 +30,7 @@ ENV APP_ENV=production \
 	DATA_DIR=/data \
 	BOOKS_DIR=/data/books \
 	COVERS_DIR=/data/covers \
+	ASSETS_DIR=/data/assets \
 	TEMP_DIR=/data/temp \
 	FRONTEND_DIST_DIR=/app/frontend/dist \
 	PUID=1000 \

@@ -26,7 +26,7 @@ BookNest 是一个多用户在线图书管理与阅读系统，提供个人书�
 克隆项目后，在项目根目录执行：
 
 ```bash
-docker compose up --build -d
+docker compose up -d
 ```
 
 访问：
@@ -35,20 +35,25 @@ docker compose up --build -d
 http://localhost:8080
 ```
 
-### 使用预构建镜像
+默认会使用 GitHub Container Registry 上的镜像：
 
-如果不想在本地构建镜像，可以将 `docker-compose.yml` 中的 `app` 服务改为：
-
-```yaml
-app:
-  image: ghcr.io/cyilin36/booknest:latest
+```text
+ghcr.io/cyilin36/booknest:latest
 ```
 
-然后启动：
+更新镜像：
 
 ```bash
 docker compose pull
 docker compose up -d
+```
+
+### 自建镜像
+
+如果希望在本机从源码构建镜像：
+
+```bash
+docker compose up --build -d
 ```
 
 ## 数据目录

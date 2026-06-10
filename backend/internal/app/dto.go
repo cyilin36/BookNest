@@ -55,6 +55,8 @@ type LibraryBookDTO struct {
 	LibraryStatus string    `json:"library_status"`
 	OwnerUserID   int64     `json:"owner_user_id"`
 	OwnerUsername *string   `json:"owner_username"`
+	CategoryIDs   []int64   `json:"category_ids"`
+	TagIDs        []int64   `json:"tag_ids"`
 	InBookshelf   bool      `json:"in_bookshelf"`
 	BookshelfID   *int64    `json:"bookshelf_id"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -62,9 +64,10 @@ type LibraryBookDTO struct {
 }
 
 type SystemSettings struct {
-	SiteName                  string `json:"site_name"`
-	AllowRegistration         bool   `json:"allow_registration"`
-	LibraryReviewRequired     bool   `json:"library_review_required"`
-	MaxUploadSizeMB           int    `json:"max_upload_size_mb"`
-	DefaultUserStorageQuotaMB int    `json:"default_user_storage_quota_mb"`
+	SiteName                  string  `json:"site_name"`
+	SiteIconURL               *string `json:"site_icon_url"`
+	AllowRegistration         bool    `json:"allow_registration"`
+	LibraryReviewRequired     bool    `json:"library_review_required"`
+	MaxUploadSizeMB           int     `json:"max_upload_size_mb"`
+	DefaultUserStorageQuotaMB int     `json:"default_user_storage_quota_mb"`
 }

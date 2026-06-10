@@ -601,6 +601,72 @@ func (s *Server) adminUpdateSettings(c *gin.Context) {
 	common.RespondJSON(c, middleware.GetRequestID(c), s.loadSettings())
 }
 
+func (s *Server) adminUploadSystemIcon(c *gin.Context) {
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
+		return
+	}
+	defer file.Close()
+	if header.Size > 2*1024*1024 {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrPayloadTooLarge)
+		return
+	}
+
+	ext, contentType, ok := siteIconFormat(header.Filename, header.Header.Get("Content-Type"))
+	if !ok {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrInvalidImageFormat)
+		return
+	}
+	sniff := make([]byte, 512)
+	n, readErr := file.Read(sniff)
+	if readErr != nil && n == 0 {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrInvalidImageFormat)
+		return
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if !validSiteIconBytes(ext, sniff[:n]) {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrInvalidImageFormat)
+		return
+	}
+
+	rel, err := s.store.SaveSiteIcon(file, ext)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+
+	oldPath := s.systemSettingValue("site_icon_path")
+	if err := s.saveSystemSetting("site_icon_path", rel); err != nil {
+		_ = s.removeAssetFile(rel)
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if oldPath != "" && oldPath != rel {
+		_ = s.removeAssetFile(oldPath)
+	}
+
+	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{"site_icon_url": siteIconURL(rel), "content_type": contentType})
+}
+
+func (s *Server) adminDeleteSystemIcon(c *gin.Context) {
+	oldPath := s.systemSettingValue("site_icon_path")
+	if oldPath != "" {
+		if err := s.removeAssetFile(oldPath); err != nil && !os.IsNotExist(err) {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+	}
+	if err := s.db.Delete(&model.SystemSetting{}, "key = ?", "site_icon_path").Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{"site_icon_url": nil})
+}
+
 func (s *Server) hasCategoryAssociations(categoryID int64) bool {
 	var count int64
 	_ = s.db.Table("book_categories").Where("category_id = ?", categoryID).Count(&count).Error

@@ -34,6 +34,7 @@ func (s *Local) EnsureDirs() error {
 		filepath.Join(s.cfg.BooksDir, "private"),
 		filepath.Join(s.cfg.BooksDir, "public"),
 		s.cfg.CoversDir,
+		s.cfg.AssetsDir,
 		s.cfg.TempDir,
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -98,6 +99,37 @@ func (s *Local) SaveCoverBytes(data []byte, bookID int64, ext string) (string, s
 	return rel, abs, nil
 }
 
+func (s *Local) SaveSiteIcon(file multipart.File, ext string) (string, error) {
+	if strings.TrimSpace(ext) == "" {
+		ext = ".png"
+	}
+	rel := filepath.Join("site", "icon"+ext)
+	abs := filepath.Join(s.cfg.AssetsDir, rel)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return "", err
+	}
+	tmpPath := filepath.Join(s.cfg.TempDir, uuid.NewString()+".site-icon")
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		return "", err
+	}
+	_, copyErr := io.Copy(out, file)
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", closeErr
+	}
+	if err := moveFile(tmpPath, abs); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", err
+	}
+	return rel, nil
+}
+
 func moveFile(src, dst string) error {
 	if err := os.Rename(src, dst); err == nil {
 		return nil
@@ -127,6 +159,10 @@ func (s *Local) BookPath(relative string) (string, error) {
 
 func (s *Local) CoverPath(relative string) (string, error) {
 	return safeJoin(s.cfg.CoversDir, relative)
+}
+
+func (s *Local) AssetPath(relative string) (string, error) {
+	return safeJoin(s.cfg.AssetsDir, relative)
 }
 
 func safeJoin(root, relative string) (string, error) {

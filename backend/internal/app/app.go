@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -52,6 +53,8 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	api := r.Group("/api/v1")
 	api.GET("/health", s.health)
 	api.GET("/system/info", s.systemInfo)
+	api.GET("/system/icon", s.systemIcon)
+	api.HEAD("/system/icon", s.systemIcon)
 	api.GET("/reader/books/:bookId/resources", s.readerResource)
 
 	api.POST("/auth/register", s.register)
@@ -120,6 +123,8 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	admin.GET("/system/storage", s.adminStorage)
 	admin.GET("/system/settings", s.adminSettings)
 	admin.PUT("/system/settings", s.adminUpdateSettings)
+	admin.POST("/system/icon", middleware.BodyLimit(3*1024*1024), s.adminUploadSystemIcon)
+	admin.DELETE("/system/icon", s.adminDeleteSystemIcon)
 
 	r.NoRoute(s.serveFrontend)
 }
@@ -128,10 +133,25 @@ func (s *Server) health(c *gin.Context) {
 	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{"status": "ok"})
 }
 
+func (s *Server) systemIcon(c *gin.Context) {
+	rel := s.systemSettingValue("site_icon_path")
+	if rel == "" {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+	path, err := s.store.AssetPath(rel)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+	c.File(path)
+}
+
 func (s *Server) systemInfo(c *gin.Context) {
 	settings := s.loadSettings()
 	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{
 		"site_name":                     settings.SiteName,
+		"site_icon_url":                 settings.SiteIconURL,
 		"allow_registration":            settings.AllowRegistration,
 		"library_review_required":       settings.LibraryReviewRequired,
 		"supported_formats":             []string{model.BookFormatEPUB, model.BookFormatPDF, model.BookFormatTXT},
@@ -457,6 +477,8 @@ func (s *Server) loadSettingsTx(tx *gorm.DB) SystemSettings {
 		switch row.Key {
 		case "site_name":
 			settings.SiteName = row.Value
+		case "site_icon_path":
+			settings.SiteIconURL = siteIconURL(row.Value)
 		case "allow_registration":
 			settings.AllowRegistration = row.Value == "true"
 		case "library_review_required":
@@ -496,6 +518,30 @@ func (s *Server) saveSettings(settings SystemSettings) error {
 	})
 }
 
+func (s *Server) systemSettingValue(key string) string {
+	var row model.SystemSetting
+	if err := s.db.First(&row, "key = ?", key).Error; err != nil {
+		return ""
+	}
+	return row.Value
+}
+
+func (s *Server) saveSystemSetting(key, value string) error {
+	row := model.SystemSetting{Key: key, Value: value, UpdatedAt: time.Now()}
+	return s.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		DoUpdates: clause.Assignments(map[string]any{"value": value, "updated_at": time.Now()}),
+	}).Create(&row).Error
+}
+
+func (s *Server) removeAssetFile(relative string) error {
+	path, err := s.store.AssetPath(relative)
+	if err != nil {
+		return err
+	}
+	return os.Remove(path)
+}
+
 func (s *Server) storageUsedBytes(userID int64) int64 {
 	var total int64
 	_ = s.db.Model(&model.Book{}).Where("owner_user_id = ? AND deleted_at IS NULL", userID).Select("COALESCE(SUM(file_size), 0)").Scan(&total).Error
@@ -512,6 +558,52 @@ func bookFormat(filename string) (string, bool) {
 		return model.BookFormatTXT, true
 	default:
 		return "", false
+	}
+}
+
+func siteIconFormat(filename, contentTypeValue string) (string, string, bool) {
+	ext := strings.ToLower(filepath.Ext(filename))
+	normalizedContentType := strings.ToLower(strings.TrimSpace(strings.Split(contentTypeValue, ";")[0]))
+	formats := map[string]string{
+		".png":  "image/png",
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".webp": "image/webp",
+		".svg":  "image/svg+xml",
+		".ico":  "image/x-icon",
+	}
+	if contentTypeValue, ok := formats[ext]; ok {
+		return ext, contentTypeValue, true
+	}
+	for allowedExt, allowedContentType := range formats {
+		if normalizedContentType == allowedContentType {
+			return allowedExt, allowedContentType, true
+		}
+	}
+	if normalizedContentType == "image/vnd.microsoft.icon" {
+		return ".ico", "image/x-icon", true
+	}
+	return "", "", false
+}
+
+func validSiteIconBytes(ext string, data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	switch ext {
+	case ".png":
+		return http.DetectContentType(data) == "image/png"
+	case ".jpg", ".jpeg":
+		return http.DetectContentType(data) == "image/jpeg"
+	case ".webp":
+		return len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP"
+	case ".ico":
+		return len(data) >= 4 && data[0] == 0 && data[1] == 0 && data[2] == 1 && data[3] == 0
+	case ".svg":
+		text := strings.ToLower(strings.TrimSpace(string(data)))
+		return strings.HasPrefix(text, "<svg") || (strings.HasPrefix(text, "<?xml") && strings.Contains(text, "<svg"))
+	default:
+		return false
 	}
 }
 
@@ -546,6 +638,14 @@ func coverURL(bookID int64, coverPath *string) *string {
 		return nil
 	}
 	v := fmt.Sprintf("/api/v1/reader/books/%d/cover", bookID)
+	return &v
+}
+
+func siteIconURL(iconPath string) *string {
+	if strings.TrimSpace(iconPath) == "" {
+		return nil
+	}
+	v := "/api/v1/system/icon"
 	return &v
 }
 

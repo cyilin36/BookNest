@@ -13,6 +13,8 @@ export interface UpdateLibraryBookInfoRequest {
   title?: string
   author?: string | null
   description?: string | null
+  category_ids?: number[] | null
+  tag_ids?: number[] | null
 }
 
 export const libraryApi = {

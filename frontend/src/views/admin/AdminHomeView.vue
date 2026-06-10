@@ -25,7 +25,7 @@ onMounted(async () => {
       <div class="metric surface">
         <ShieldCheck :size="20" />
         <strong>{{ settings?.library_review_required ? '待审' : '直发' }}</strong>
-        <span>公共馆审核</span>
+        <span>图书馆审核</span>
       </div>
       <div class="metric surface">
         <AlertCircle :size="20" />

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useDialog, useMessage } from 'naive-ui'
+import { Search, Trash2 } from 'lucide-vue-next'
 import PageShell from '@/components/common/PageShell.vue'
 import PaginationBar from '@/components/common/PaginationBar.vue'
 import { userApi } from '@/api/user'
@@ -19,17 +20,25 @@ const filters = reactive({
   status: null as UserStatus | null
 })
 
-const roleOptions = [
+const roleOptions: { label: string; value: UserRole | null }[] = [
   { label: '全部角色', value: null },
   { label: '管理员', value: 'admin' },
   { label: '普通用户', value: 'user' }
 ]
 
-const statusOptions = [
+const statusOptions: { label: string; value: UserStatus | null }[] = [
   { label: '全部状态', value: null },
   { label: '启用', value: 'active' },
   { label: '禁用', value: 'disabled' }
 ]
+
+const activeUsersOnPage = computed(() => users.value.filter((user) => user.status === 'active').length)
+const loadedRange = computed(() => {
+  if (!users.value.length) return '0'
+  const start = (pagination.value.page - 1) * pagination.value.page_size + 1
+  const end = start + users.value.length - 1
+  return `${start}-${end}`
+})
 
 async function fetchUsers(page = 1) {
   loading.value = true
@@ -46,6 +55,14 @@ async function fetchUsers(page = 1) {
   } finally {
     loading.value = false
   }
+}
+
+function setRoleFilter(role: UserRole | null) {
+  filters.role = role
+}
+
+function setStatusFilter(status: UserStatus | null) {
+  filters.status = status
 }
 
 async function changeRole(user: User, role: UserRole) {
@@ -99,17 +116,63 @@ onMounted(() => fetchUsers())
 </script>
 
 <template>
-  <PageShell title="用户管理" subtitle="查看用户状态、角色和存储使用">
-    <div class="surface filter-bar">
-      <n-input v-model:value="filters.keyword" clearable placeholder="搜索用户名或邮箱" @keyup.enter="fetchUsers(1)" />
-      <n-select v-model:value="filters.role" :options="roleOptions" />
-      <n-select v-model:value="filters.status" :options="statusOptions" />
-      <n-button type="primary" secondary @click="fetchUsers(1)">筛选</n-button>
-    </div>
+  <PageShell class="admin-users-page" title="用户管理" subtitle="查看用户状态、角色和存储使用">
+    <template #actions>
+      <div class="user-stats">
+        <span>总用户 {{ pagination.total }}</span>
+        <span>本页启用 {{ activeUsersOnPage }}</span>
+      </div>
+    </template>
+    <section class="surface user-filter-panel">
+      <label class="filter-field search-field">
+        <span>搜索</span>
+        <div class="filter-control">
+          <n-input v-model:value="filters.keyword" clearable placeholder="搜索用户名或邮箱" @keyup.enter="fetchUsers(1)">
+            <template #prefix><Search :size="16" /></template>
+          </n-input>
+        </div>
+      </label>
+      <div class="filter-field">
+        <span>角色</span>
+        <div class="segmented-control">
+          <button
+            v-for="option in roleOptions"
+            :key="String(option.value)"
+            type="button"
+            :class="{ active: filters.role === option.value }"
+            @click="setRoleFilter(option.value)"
+          >
+            {{ option.label.replace('全部', '全部') }}
+          </button>
+        </div>
+      </div>
+      <div class="filter-field">
+        <span>状态</span>
+        <div class="segmented-control">
+          <button
+            v-for="option in statusOptions"
+            :key="String(option.value)"
+            type="button"
+            :class="{ active: filters.status === option.value }"
+            @click="setStatusFilter(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+      </div>
+      <n-button class="filter-submit" type="primary" @click="fetchUsers(1)">
+        <template #icon><Search :size="16" /></template>
+        搜索
+      </n-button>
+    </section>
     <n-spin :show="loading">
-      <div class="surface table">
+      <div class="surface users-table-card">
+        <div class="table-meta">
+          <strong>用户列表</strong>
+          <span>显示 {{ loadedRange }} / 共 {{ pagination.total }}</span>
+        </div>
         <div class="row header">
-          <strong>用户</strong>
+          <strong>用户资料</strong>
           <strong>角色</strong>
           <strong>状态</strong>
           <strong>存储</strong>
@@ -117,17 +180,22 @@ onMounted(() => fetchUsers())
           <strong>操作</strong>
         </div>
         <div v-for="user in users" :key="user.id" class="row">
-          <div>
-            <strong>{{ user.username }}</strong>
-            <span>{{ user.email || '无邮箱' }}</span>
+          <div class="user-profile">
+            <span class="avatar">{{ user.username.slice(0, 1).toUpperCase() }}</span>
+            <span>
+              <strong>{{ user.username }}</strong>
+              <small>{{ user.email || '无邮箱' }}</small>
+            </span>
           </div>
           <n-select
+            class="cell-select"
             :value="user.role"
             size="small"
             :options="[{ label: '管理员', value: 'admin' }, { label: '普通用户', value: 'user' }]"
             @update:value="(value: UserRole) => onRoleSelect(user, value)"
           />
           <n-select
+            class="cell-select"
             :value="user.status"
             size="small"
             :options="[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]"
@@ -143,6 +211,7 @@ onMounted(() => fetchUsers())
             :loading="deletingUserId === user.id"
             @click="confirmDeleteUser(user)"
           >
+            <template #icon><Trash2 :size="15" /></template>
             删除
           </n-button>
           <span v-else class="muted">-</span>
@@ -154,25 +223,108 @@ onMounted(() => fetchUsers())
 </template>
 
 <style scoped>
-.filter-bar {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) 150px 150px auto;
-  gap: 10px;
-  padding: 12px;
+.admin-users-page {
+  gap: 16px;
 }
 
-.table {
+.user-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--color-text-sec);
+  font-size: 13px;
+}
+
+.user-stats span {
+  padding: 6px 10px;
+  background: var(--color-primary-suppl);
+  border-radius: 999px;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.user-filter-panel {
   display: grid;
-  padding: 12px;
+  grid-template-columns: minmax(220px, 1.25fr) minmax(220px, auto) minmax(180px, auto) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 14px;
+}
+
+.filter-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.filter-field > span {
+  color: var(--color-text-main);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.filter-control {
+  min-width: 0;
+}
+
+.segmented-control {
+  display: flex;
+  min-height: 34px;
+  padding: 3px;
+  background: #eef2f5;
+  border-radius: 8px;
+}
+
+.segmented-control button {
+  min-width: 0;
+  padding: 0 10px;
+  color: var(--color-text-sec);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.segmented-control button.active {
+  color: var(--color-text-main);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.filter-submit {
+  min-width: 82px;
+}
+
+.users-table-card {
+  display: grid;
+  padding: 0 14px 10px;
   overflow-x: auto;
+}
+
+.table-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 760px;
+  padding: 14px 4px 10px;
+}
+
+.table-meta span {
+  color: var(--color-text-sec);
+  font-size: 13px;
 }
 
 .row {
   display: grid;
-  grid-template-columns: minmax(180px, 2fr) 130px 130px 110px 160px 88px;
+  grid-template-columns: minmax(220px, 2fr) 132px 132px 110px 160px 88px;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  min-width: 760px;
+  padding: 11px 4px;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -181,18 +333,72 @@ onMounted(() => fetchUsers())
   font-size: 13px;
 }
 
-.row div {
-  display: grid;
+.user-profile {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
 }
 
-.row div span {
+.user-profile > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.user-profile strong,
+.user-profile small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-profile small {
   color: var(--color-text-sec);
   font-size: 12px;
 }
 
-@media (max-width: 760px) {
-  .filter-bar {
+.avatar {
+  display: inline-grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: var(--color-primary);
+  background: var(--color-primary-suppl);
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.cell-select {
+  max-width: 132px;
+}
+
+@media (max-width: 1080px) {
+  .user-filter-panel {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .search-field {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-users-page :deep(.page-header) {
+    flex-direction: column;
+  }
+
+  .user-stats {
+    justify-content: flex-start;
+  }
+
+  .user-filter-panel {
     grid-template-columns: 1fr;
+  }
+
+  .segmented-control {
+    overflow-x: auto;
   }
 }
 </style>

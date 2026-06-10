@@ -2,6 +2,7 @@ services:
   # PostgreSQL 数据库：保存用户、图书元数据、书架记录、阅读进度和系统设置。
   postgres:
     image: postgres:17-alpine
+    container_name: booknest-postgres
     restart: unless-stopped
     environment:
       # 生产环境请修改数据库名、用户名、密码，并同步修改下方 app 的 DATABASE_DSN。
@@ -20,11 +21,13 @@ services:
 
   # BookNest 主服务：同一个容器内运行 Go API 服务，并托管构建后的 Vue 前端。
   app:
+    # 默认使用 GitHub Container Registry 上发布的镜像。
+    image: ghcr.io/cyilin36/booknest:latest
     build:
-      # 从当前整合后的项目根目录构建镜像。
+      # 如需自建镜像，执行：docker compose up --build -d
       context: .
       dockerfile: Dockerfile
-    image: booknest:latest
+    container_name: booknest
     restart: unless-stopped
     depends_on:
       # 等 PostgreSQL 健康检查通过后，再启动应用迁移和 HTTP 服务。
@@ -41,6 +44,7 @@ services:
       DATA_DIR: /data
       BOOKS_DIR: /data/books
       COVERS_DIR: /data/covers
+      ASSETS_DIR: /data/assets
       TEMP_DIR: /data/temp
       # 前端构建产物目录，必须与 Dockerfile 中复制 dist 的位置一致。
       FRONTEND_DIST_DIR: /app/frontend/dist

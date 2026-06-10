@@ -2,7 +2,6 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AuthLayout from '@/layouts/AuthLayout.vue'
 import AppLayout from '@/layouts/AppLayout.vue'
 import ReaderLayout from '@/layouts/ReaderLayout.vue'
-import AdminLayout from '@/layouts/AdminLayout.vue'
 import LoginView from '@/views/auth/LoginView.vue'
 import RegisterView from '@/views/auth/RegisterView.vue'
 import BookshelfView from '@/views/bookshelf/BookshelfView.vue'
@@ -43,7 +42,14 @@ const routes: RouteRecordRaw[] = [
       { path: 'library/mine', name: 'library-mine', component: MyLibraryView },
       { path: 'library/:id', name: 'library-detail', component: LibraryDetailView, props: true },
       { path: 'upload', name: 'upload', component: UploadView },
-      { path: 'settings', name: 'settings', component: SettingsView }
+      { path: 'settings', name: 'settings', component: SettingsView },
+      { path: 'admin', name: 'admin', component: AdminHomeView, meta: { requiresAdmin: true } },
+      { path: 'admin/users', name: 'admin-users', component: AdminUsersView, meta: { requiresAdmin: true } },
+      { path: 'admin/books', name: 'admin-books', component: AdminLibraryView, meta: { requiresAdmin: true } },
+      { path: 'admin/library', name: 'admin-library', component: AdminLibraryView, meta: { requiresAdmin: true } },
+      { path: 'admin/categories', name: 'admin-categories', component: AdminCategoriesView, meta: { requiresAdmin: true } },
+      { path: 'admin/tags', name: 'admin-tags', component: AdminTagsView, meta: { requiresAdmin: true } },
+      { path: 'admin/settings', name: 'admin-settings', component: AdminSettingsView, meta: { requiresAdmin: true } }
     ]
   },
   {
@@ -51,20 +57,6 @@ const routes: RouteRecordRaw[] = [
     component: ReaderLayout,
     meta: { requiresAuth: true },
     children: [{ path: '', name: 'reader', component: ReaderView, props: true }]
-  },
-  {
-    path: '/admin',
-    component: AdminLayout,
-    meta: { requiresAuth: true, requiresAdmin: true },
-    children: [
-      { path: '', name: 'admin', component: AdminHomeView },
-      { path: 'users', name: 'admin-users', component: AdminUsersView },
-      { path: 'books', name: 'admin-books', component: AdminLibraryView },
-      { path: 'library', name: 'admin-library', component: AdminLibraryView },
-      { path: 'categories', name: 'admin-categories', component: AdminCategoriesView },
-      { path: 'tags', name: 'admin-tags', component: AdminTagsView },
-      { path: 'settings', name: 'admin-settings', component: AdminSettingsView }
-    ]
   },
   { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView }
 ]

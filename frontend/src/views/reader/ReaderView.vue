@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import { ChevronLeft, ChevronRight, List, Settings2 } from 'lucide-vue-next'
+import { ArrowLeft, ChevronLeft, ChevronRight, List, Settings2 } from 'lucide-vue-next'
 import PageShell from '@/components/common/PageShell.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useReaderStore } from '@/stores/reader'
@@ -11,6 +11,7 @@ import { useReaderProgress } from '@/composables/useReaderProgress'
 import type { ReaderChapter, ReaderChapterContent, ReaderLineHeight, ThemeName } from '@/api/types'
 
 const route = useRoute()
+const router = useRouter()
 const message = useMessage()
 const reader = useReaderStore()
 const settings = useSettingsStore()
@@ -22,7 +23,6 @@ const { save, saveNow } = useReaderProgress(bookId)
 
 const activeChapter = computed(() => reader.chapters.find((chapter) => chapter.id === reader.activeChapterId) || null)
 const readableChapters = computed(() => reader.chapters.filter((chapter) => !chapter.is_volume))
-const bookFormatLabel = computed(() => reader.bookMeta?.format.toUpperCase() || '')
 const activeContent = ref<string>('')
 const activeContentType = ref<ReaderChapterContent['content_type']>('html')
 const readerTopRef = ref<HTMLElement | null>(null)
@@ -176,6 +176,15 @@ function updateFontSize(value: number) {
   settings.updateReaderSettings({ font_size: value })
 }
 
+function updateContentWidth(value: number) {
+  settings.updateReaderSettings({ content_width: value })
+}
+
+function exitReader() {
+  saveCurrentPosition(true)
+  router.push('/bookshelf')
+}
+
 async function scrollReaderToTop() {
   await nextTick()
   readerTopRef.value?.scrollIntoView({ block: 'start' })
@@ -264,6 +273,7 @@ watch(
   () => {
     document.documentElement.style.setProperty('--reader-font-size', `${settings.reader.font_size}px`)
     document.documentElement.style.setProperty('--reader-line-height', String(settings.reader.line_height))
+    document.documentElement.style.setProperty('--reader-content-width', settings.reader.content_width > 0 ? `${settings.reader.content_width}px` : '100%')
   },
   { deep: true, immediate: true }
 )
@@ -282,22 +292,9 @@ watch(
 
 <template>
   <main class="reader-shell">
-    <PageShell v-if="reader.bookMeta" :title="reader.bookMeta.title" :subtitle="reader.bookMeta.author || '在线阅读'">
-      <template #actions>
-        <n-button secondary @click="openChapterDrawer()">
-          <template #icon><List :size="16" /></template>
-          目录
-        </n-button>
-        <n-button secondary @click="settingsDrawer = true">
-          <template #icon><Settings2 :size="16" /></template>
-          设置
-        </n-button>
-      </template>
-      <div ref="readerTopRef" class="reader-topline surface">
-        <div>{{ activeChapter?.title || '未选择章节' }}</div>
-        <div class="muted">{{ bookFormatLabel }}</div>
-      </div>
-      <section class="reader-panel surface">
+    <PageShell v-if="reader.bookMeta" :title="reader.bookMeta.title">
+      <section ref="readerTopRef" class="reader-panel surface" :class="{ 'is-fluid': settings.reader.content_width <= 0 }">
+        <h2 v-if="activeChapter && activeContentType !== 'html'" class="reader-chapter-title">{{ activeChapter.title }}</h2>
         <div v-if="activeContent && activeContentType === 'html'" class="reader-content" v-html="activeContent" />
         <div v-else-if="activeContent" class="reader-content reader-content-text" v-text="activeContent" />
         <div v-if="activeContent" class="reader-tap-zones">
@@ -315,7 +312,7 @@ watch(
           <n-button secondary @click="reader.loadChapters(bookId)">重试</n-button>
         </EmptyState>
       </section>
-      <div class="reader-bottom toolbar">
+      <div class="reader-bottom toolbar" :class="{ 'is-fluid': settings.reader.content_width <= 0 }">
         <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="prevChapter()">
           <template #icon><ChevronLeft :size="16" /></template>
           上一章
@@ -357,12 +354,24 @@ watch(
       <div class="settings-panel">
         <n-radio-group v-model:value="settings.reader.theme" @update:value="updateTheme">
           <n-space vertical>
-            <n-radio value="modern">Modern</n-radio>
-            <n-radio value="sepia">Sepia</n-radio>
-            <n-radio value="dark">Dark</n-radio>
+            <n-radio value="modern">现代</n-radio>
+            <n-radio value="sepia">纸页</n-radio>
+            <n-radio value="dark">深色</n-radio>
           </n-space>
         </n-radio-group>
-        <n-slider v-model:value="settings.reader.font_size" :min="14" :max="26" :step="1" @update:value="updateFontSize" />
+        <n-slider v-model:value="settings.reader.font_size" :min="14" :max="26" :step="1" :tooltip="false" @update:value="updateFontSize" />
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>阅读宽度</span>
+          </div>
+          <n-slider v-model:value="settings.reader.content_width" :min="0" :max="1180" :step="20" :tooltip="false" @update:value="updateContentWidth" />
+          <div class="width-presets">
+            <n-button size="small" secondary @click="updateContentWidth(640)">窄</n-button>
+            <n-button size="small" secondary @click="updateContentWidth(760)">适中</n-button>
+            <n-button size="small" secondary @click="updateContentWidth(920)">宽</n-button>
+            <n-button size="small" secondary @click="updateContentWidth(0)">铺满</n-button>
+          </div>
+        </div>
         <n-select
           v-model:value="settings.reader.line_height"
           :options="[
@@ -377,41 +386,52 @@ watch(
   </n-drawer>
 
   <Transition name="reader-menu-slide">
-    <section v-if="readerMenuOpen" class="reader-menu surface">
-      <div class="reader-menu-title">{{ activeChapter?.title || reader.bookMeta?.title || '阅读菜单' }}</div>
-      <div class="reader-menu-actions">
-        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="runWithMenuKept(prevChapter)">
-          <template #icon><ChevronLeft :size="16" /></template>
-          上一章
+    <div v-if="readerMenuOpen" class="reader-menu-layer">
+      <section class="reader-status-bar">
+        <n-button circle secondary title="退出阅读" aria-label="退出阅读" @click="exitReader">
+          <template #icon><ArrowLeft :size="18" /></template>
         </n-button>
-        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="runWithMenuKept(nextChapter)">
-          <template #icon><ChevronRight :size="16" /></template>
-          下一章
+        <div class="reader-status-title">{{ activeChapter?.title || reader.bookMeta?.title || '正在阅读' }}</div>
+        <n-button circle secondary title="阅读设置" aria-label="阅读设置" @click="settingsDrawer = true">
+          <template #icon><Settings2 :size="18" /></template>
         </n-button>
-        <n-button secondary @click="openChapterDrawer()">
-          <template #icon><List :size="16" /></template>
-          目录
-        </n-button>
-        <n-button secondary @click="settingsDrawer = true">
-          <template #icon><Settings2 :size="16" /></template>
-          设置
-        </n-button>
-      </div>
-    </section>
+      </section>
+      <section class="reader-menu">
+        <div class="reader-menu-actions">
+          <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="runWithMenuKept(prevChapter)">
+            <template #icon><ChevronLeft :size="16" /></template>
+            上一章
+          </n-button>
+          <n-button secondary @click="openChapterDrawer()">
+            <template #icon><List :size="16" /></template>
+            目录
+          </n-button>
+          <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="runWithMenuKept(nextChapter)">
+            <template #icon><ChevronRight :size="16" /></template>
+            下一章
+          </n-button>
+        </div>
+      </section>
+    </div>
   </Transition>
 </template>
 
 <style scoped>
-.reader-topline,
 .reader-panel,
 .reader-bottom {
   padding: 14px;
 }
 
-.reader-topline {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+.reader-panel,
+.reader-bottom {
+  width: min(var(--reader-content-width, 760px), 100%);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.reader-panel.is-fluid,
+.reader-bottom.is-fluid {
+  width: 100%;
 }
 
 .reader-panel {
@@ -419,6 +439,14 @@ watch(
   max-width: 100%;
   overflow: hidden;
   min-height: 54vh;
+}
+
+.reader-chapter-title {
+  margin: 0 0 1.25em;
+  color: var(--color-text-main);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .reader-content-text {
@@ -452,31 +480,60 @@ watch(
   justify-content: center;
 }
 
-.reader-menu {
+.reader-menu-layer {
   position: fixed;
-  right: max(16px, env(safe-area-inset-right));
-  bottom: max(16px, env(safe-area-inset-bottom));
-  left: max(16px, env(safe-area-inset-left));
+  inset: 0;
   z-index: 20;
-  width: min(560px, calc(100vw - 32px));
-  margin: 0 auto;
-  padding: 16px;
-  border: 1px solid var(--color-border);
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
+  pointer-events: none;
 }
 
-.reader-menu-title {
-  margin-bottom: 14px;
+.reader-status-bar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--color-bg-card) 94%, transparent);
+  border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
+}
+
+.reader-status-title {
+  min-width: 0;
   color: var(--color-text-main);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.35;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-menu {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  padding: 10px max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--color-bg-card) 94%, transparent);
+  border-top: 1px solid var(--color-border);
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
 }
 
 .reader-menu-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(720px, 100%);
+  margin: 0 auto;
 }
 
 .reader-menu-slide-enter-active,
@@ -490,6 +547,12 @@ watch(
 .reader-menu-slide-leave-to {
   opacity: 0;
   transform: translateY(18px);
+}
+
+@media (max-width: 560px) {
+  .reader-menu-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .chapter-list {
@@ -527,5 +590,28 @@ watch(
 .settings-panel {
   display: grid;
   gap: 18px;
+}
+
+.setting-group {
+  display: grid;
+  gap: 8px;
+}
+
+.setting-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-text-sec);
+  font-size: 13px;
+}
+
+.setting-label strong {
+  color: var(--color-text-main);
+}
+
+.width-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
 }
 </style>

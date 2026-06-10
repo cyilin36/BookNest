@@ -2,7 +2,8 @@ import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 import router from '@/router'
 import type { APIErrorPayload, AuthSession, PaginatedPayload, SuccessPayload } from './types'
 
-const TOKEN_KEY = 'booknest.access-token'
+const TOKEN_KEY = 'book-nest.access-token'
+const LEGACY_TOKEN_KEY = 'book-reader.access-token'
 
 export class AppAPIError extends Error {
   code: string
@@ -16,6 +17,12 @@ export class AppAPIError extends Error {
     this.requestId = requestId
     this.status = status
   }
+}
+
+const legacyToken = sessionStorage.getItem(LEGACY_TOKEN_KEY)
+if (!sessionStorage.getItem(TOKEN_KEY) && legacyToken) {
+  sessionStorage.setItem(TOKEN_KEY, legacyToken)
+  sessionStorage.removeItem(LEGACY_TOKEN_KEY)
 }
 
 let accessToken = sessionStorage.getItem(TOKEN_KEY)

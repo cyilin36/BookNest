@@ -6,6 +6,7 @@ PGID="${PGID:-1000}"
 DATA_DIR="${DATA_DIR:-/data}"
 BOOKS_DIR="${BOOKS_DIR:-$DATA_DIR/books}"
 COVERS_DIR="${COVERS_DIR:-$DATA_DIR/covers}"
+ASSETS_DIR="${ASSETS_DIR:-$DATA_DIR/assets}"
 TEMP_DIR="${TEMP_DIR:-$DATA_DIR/temp}"
 
 case "$PUID" in
@@ -33,8 +34,8 @@ if [ "$(id -u)" = "0" ]; then
     adduser -D -H -u "$PUID" -G "$GROUP_NAME" booknest >/dev/null
   fi
 
-  mkdir -p "$DATA_DIR" "$BOOKS_DIR" "$COVERS_DIR" "$TEMP_DIR"
-  chown -R "$PUID:$PGID" "$DATA_DIR" "$BOOKS_DIR" "$COVERS_DIR" "$TEMP_DIR"
+  mkdir -p "$DATA_DIR" "$BOOKS_DIR" "$COVERS_DIR" "$ASSETS_DIR" "$TEMP_DIR"
+  chown -R "$PUID:$PGID" "$DATA_DIR" "$BOOKS_DIR" "$COVERS_DIR" "$ASSETS_DIR" "$TEMP_DIR"
 
   exec su-exec "$PUID:$PGID" "$@"
 fi

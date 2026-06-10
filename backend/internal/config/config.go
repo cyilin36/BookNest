@@ -17,6 +17,7 @@ type Config struct {
 	DataDir                   string
 	BooksDir                  string
 	CoversDir                 string
+	AssetsDir                 string
 	TempDir                   string
 	FrontendDistDir           string
 	JWTSecret                 string
@@ -43,6 +44,7 @@ func Load() (*Config, error) {
 	}
 	cfg.BooksDir = getenv("BOOKS_DIR", filepath.Join(cfg.DataDir, "books"))
 	cfg.CoversDir = getenv("COVERS_DIR", filepath.Join(cfg.DataDir, "covers"))
+	cfg.AssetsDir = getenv("ASSETS_DIR", filepath.Join(cfg.DataDir, "assets"))
 	cfg.TempDir = getenv("TEMP_DIR", filepath.Join(cfg.DataDir, "temp"))
 	cfg.FrontendDistDir = getenv("FRONTEND_DIST_DIR", "./frontend/dist")
 	cfg.AccessTokenTTL = mustDuration(getenv("ACCESS_TOKEN_TTL", "2h"), 2*time.Hour)

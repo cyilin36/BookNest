@@ -1,17 +1,24 @@
 import { defineStore } from 'pinia'
 import type { ReaderSettings, ReaderLineHeight, ThemeName } from '@/api/types'
 
-const KEY = 'booknest.settings'
+const KEY = 'book-nest.settings'
+const LEGACY_KEY = 'book-reader.settings'
 
 const defaults: ReaderSettings = {
   theme: 'modern',
   font_size: window.matchMedia('(max-width: 720px)').matches ? 16 : 18,
   line_height: 1.8,
+  content_width: window.matchMedia('(max-width: 720px)').matches ? 0 : 760,
   font_family: 'sans'
 }
 
 function readSettings(): ReaderSettings {
   try {
+    const legacySettings = localStorage.getItem(LEGACY_KEY)
+    if (!localStorage.getItem(KEY) && legacySettings) {
+      localStorage.setItem(KEY, legacySettings)
+      localStorage.removeItem(LEGACY_KEY)
+    }
     return { ...defaults, ...JSON.parse(localStorage.getItem(KEY) || '{}') }
   } catch {
     return defaults

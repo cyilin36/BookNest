@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
+import SiteBrandMark from '@/components/common/SiteBrandMark.vue'
 import { useSystemStore } from '@/stores/system'
 
 const system = useSystemStore()
@@ -9,10 +10,10 @@ const system = useSystemStore()
   <main class="auth-layout">
     <section class="auth-panel surface">
       <div class="brand">
-        <div class="brand-mark">BR</div>
+        <SiteBrandMark :size="48" />
         <div>
           <h1>{{ system.siteName }}</h1>
-          <p>多用户在线阅读与公共图书馆</p>
+          <p>多用户在线阅读与图书馆</p>
         </div>
       </div>
       <RouterView />
@@ -39,17 +40,6 @@ const system = useSystemStore()
   align-items: center;
   gap: 14px;
   margin-bottom: 24px;
-}
-
-.brand-mark {
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  color: #fff;
-  background: var(--color-primary);
-  border-radius: 8px;
-  font-weight: 800;
 }
 
 .brand h1 {

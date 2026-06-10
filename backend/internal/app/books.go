@@ -798,27 +798,91 @@ func (s *Server) updateOwnLibraryBook(c *gin.Context) {
 		common.RespondError(c, middleware.GetRequestID(c), err)
 		return
 	}
-	if len(updates) == 0 {
+	var categoryIDs []int64
+	replaceCategories := false
+	if v, exists := raw["category_ids"]; exists {
+		replaceCategories = true
+		categoryIDs, err = int64ArrayJSON(v)
+		if err != nil {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+		categoryIDs, err = s.validSystemCategoryIDs(categoryIDs)
+		if err != nil {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+	}
+	var tagIDs []int64
+	replaceTags := false
+	if v, exists := raw["tag_ids"]; exists {
+		replaceTags = true
+		tagIDs, err = int64ArrayJSON(v)
+		if err != nil {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+		tagIDs, err = s.validSystemTagIDs(tagIDs)
+		if err != nil {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+	}
+	if len(updates) == 0 && !replaceCategories && !replaceTags {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
 		return
 	}
 	u := middleware.CurrentUser(c)
-	updates["updated_at"] = time.Now()
-	res := s.db.Model(&model.Book{}).Where("id = ? AND visibility = ? AND owner_user_id = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic, u.ID).Updates(updates)
-	if res.Error != nil {
-		common.RespondError(c, middleware.GetRequestID(c), res.Error)
-		return
-	}
-	if res.RowsAffected == 0 {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var count int64
-		if err := s.db.Model(&model.Book{}).Where("id = ? AND visibility = ? AND owner_user_id = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic, u.ID).Count(&count).Error; err != nil {
-			common.RespondError(c, middleware.GetRequestID(c), err)
-			return
+		if err := tx.Model(&model.Book{}).Where("id = ? AND visibility = ? AND owner_user_id = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic, u.ID).Count(&count).Error; err != nil {
+			return err
 		}
 		if count == 0 {
-			common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
-			return
+			return common.ErrBookNotFound
 		}
+		if len(updates) > 0 {
+			updates["updated_at"] = time.Now()
+			if err := tx.Model(&model.Book{}).Where("id = ? AND visibility = ? AND owner_user_id = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic, u.ID).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		if replaceCategories {
+			if err := tx.Where("book_id = ?", id).Delete(&model.BookCategory{}).Error; err != nil {
+				return err
+			}
+			if len(categoryIDs) > 0 {
+				rows := make([]model.BookCategory, 0, len(categoryIDs))
+				for _, categoryID := range categoryIDs {
+					rows = append(rows, model.BookCategory{BookID: id, CategoryID: categoryID})
+				}
+				if err := tx.Create(&rows).Error; err != nil {
+					return err
+				}
+			}
+		}
+		if replaceTags {
+			if err := tx.Where("book_id = ?", id).Delete(&model.BookTag{}).Error; err != nil {
+				return err
+			}
+			if len(tagIDs) > 0 {
+				rows := make([]model.BookTag, 0, len(tagIDs))
+				for _, tagID := range tagIDs {
+					rows = append(rows, model.BookTag{BookID: id, TagID: tagID})
+				}
+				if err := tx.Create(&rows).Error; err != nil {
+					return err
+				}
+			}
+		}
+		if len(updates) == 0 {
+			return tx.Model(&model.Book{}).Where("id = ?", id).Update("updated_at", time.Now()).Error
+		}
+		return nil
+	})
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
 	}
 	var b model.Book
 	if err := s.db.First(&b, "id = ? AND visibility = ?", id, model.BookVisibilityPublic).Error; err != nil {
@@ -1019,6 +1083,17 @@ func isJSONNull(raw json.RawMessage) bool {
 	return strings.EqualFold(strings.TrimSpace(string(raw)), "null")
 }
 
+func int64ArrayJSON(raw json.RawMessage) ([]int64, error) {
+	if isJSONNull(raw) {
+		return nil, nil
+	}
+	var ids []int64
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return nil, common.ErrValidationFailed
+	}
+	return normalizeInt64s(ids), nil
+}
+
 func bookInfoRaw(raw map[string]json.RawMessage, key string) (json.RawMessage, bool) {
 	if v, exists := raw[key]; exists {
 		return v, true
@@ -1148,7 +1223,19 @@ func (s *Server) libraryDTO(b model.Book, ownerUsername string, bookshelfID *int
 	if ownerUsername != "" {
 		owner = &ownerUsername
 	}
-	return LibraryBookDTO{ID: b.ID, Title: b.Title, Author: b.Author, Description: b.Description, Format: b.Format, CoverURL: coverURL(b.ID, b.CoverPath), FileSize: b.FileSize, LibraryStatus: status, OwnerUserID: b.OwnerUserID, OwnerUsername: owner, BookshelfID: bookshelfID, InBookshelf: bookshelfID != nil, CreatedAt: b.CreatedAt, UpdatedAt: b.UpdatedAt}
+	return LibraryBookDTO{ID: b.ID, Title: b.Title, Author: b.Author, Description: b.Description, Format: b.Format, CoverURL: coverURL(b.ID, b.CoverPath), FileSize: b.FileSize, LibraryStatus: status, OwnerUserID: b.OwnerUserID, OwnerUsername: owner, CategoryIDs: s.bookCategoryIDs(b.ID), TagIDs: s.bookTagIDs(b.ID), BookshelfID: bookshelfID, InBookshelf: bookshelfID != nil, CreatedAt: b.CreatedAt, UpdatedAt: b.UpdatedAt}
+}
+
+func (s *Server) bookCategoryIDs(bookID int64) []int64 {
+	var ids []int64
+	_ = s.db.Model(&model.BookCategory{}).Where("book_id = ?", bookID).Pluck("category_id", &ids).Error
+	return normalizeInt64s(ids)
+}
+
+func (s *Server) bookTagIDs(bookID int64) []int64 {
+	var ids []int64
+	_ = s.db.Model(&model.BookTag{}).Where("book_id = ?", bookID).Pluck("tag_id", &ids).Error
+	return normalizeInt64s(ids)
 }
 
 func orderDir(v string) string {

@@ -10,6 +10,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import PageShell from '@/components/common/PageShell.vue'
 import PaginationBar from '@/components/common/PaginationBar.vue'
 import { libraryApi } from '@/api/library'
+import { useTaxonomyOptions } from '@/composables/useTaxonomyOptions'
 import { createBookDownloadName, downloadBlob } from '@/utils/download'
 import type { LibraryBook, Pagination } from '@/api/types'
 
@@ -18,6 +19,7 @@ type OwnLibraryStatusFilter = 'all' | 'approved' | 'hidden'
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const { categoryOptions, tagOptions, loading: taxonomyLoading } = useTaxonomyOptions()
 const books = ref<LibraryBook[]>([])
 const loading = ref(false)
 const statusChangingId = ref<number | null>(null)
@@ -126,7 +128,7 @@ onMounted(() => fetchPage())
 </script>
 
 <template>
-  <PageShell class="my-library-page" title="我的公共图书馆">
+  <PageShell class="my-library-page" title="我的图书馆">
     <template #actions>
       <n-tooltip trigger="hover">
         <template #trigger>
@@ -213,7 +215,10 @@ onMounted(() => fetchPage())
     <BookInfoEditModal
       :show="Boolean(editingBook)"
       title="编辑公共图书信息"
-      :initial="editingBook ? { title: editingBook.title, author: editingBook.author, description: editingBook.description } : null"
+      :initial="editingBook ? { title: editingBook.title, author: editingBook.author, description: editingBook.description, category_ids: editingBook.category_ids || [], tag_ids: editingBook.tag_ids || [] } : null"
+      :category-options="categoryOptions"
+      :tag-options="tagOptions"
+      :taxonomy-loading="taxonomyLoading"
       :saving="savingInfo"
       @update:show="($event) => { if (!$event) editingBook = null }"
       @save="saveBookInfo"

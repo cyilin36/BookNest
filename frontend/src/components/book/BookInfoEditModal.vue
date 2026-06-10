@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
 export interface BookInfoEditPayload {
   title: string
   author: string | null
   description: string | null
+  category_ids?: number[] | null
+  tag_ids?: number[] | null
 }
 
 const props = defineProps<{
   show: boolean
   title: string
   initial: BookInfoEditPayload | null
+  categoryOptions?: { label: string; value: number }[]
+  tagOptions?: { label: string; value: number }[]
+  taxonomyLoading?: boolean
+  singleCategory?: boolean
   saving?: boolean
 }>()
 
@@ -22,7 +28,18 @@ const emit = defineEmits<{
 const form = reactive({
   title: '',
   author: '',
-  description: ''
+  description: '',
+  category_ids: [] as number[],
+  tag_ids: [] as number[]
+})
+
+const categoryValue = computed({
+  get() {
+    return props.singleCategory ? (form.category_ids[0] ?? null) : form.category_ids
+  },
+  set(value: number | number[] | null) {
+    form.category_ids = Array.isArray(value) ? value : value ? [value] : []
+  }
 })
 
 watch(
@@ -32,6 +49,8 @@ watch(
     form.title = props.initial.title
     form.author = props.initial.author || ''
     form.description = props.initial.description || ''
+    form.category_ids = props.initial.category_ids || []
+    form.tag_ids = props.initial.tag_ids || []
   },
   { immediate: true }
 )
@@ -47,7 +66,9 @@ function submit() {
   emit('save', {
     title,
     author: form.author.trim() || null,
-    description: form.description.trim() || null
+    description: form.description.trim() || null,
+    category_ids: props.categoryOptions ? form.category_ids : undefined,
+    tag_ids: props.tagOptions ? form.tag_ids : undefined
   })
 }
 </script>
@@ -63,6 +84,19 @@ function submit() {
       </n-form-item>
       <n-form-item label="简介">
         <n-input v-model:value="form.description" type="textarea" placeholder="可选" :autosize="{ minRows: 4, maxRows: 8 }" maxlength="2000" show-count />
+      </n-form-item>
+      <n-form-item v-if="categoryOptions" label="分类">
+        <n-select
+          v-model:value="categoryValue"
+          :multiple="!singleCategory"
+          clearable
+          :loading="taxonomyLoading"
+          :options="categoryOptions"
+          placeholder="可选"
+        />
+      </n-form-item>
+      <n-form-item v-if="tagOptions" label="标签">
+        <n-select v-model:value="form.tag_ids" multiple clearable :loading="taxonomyLoading" :options="tagOptions" placeholder="可选" />
       </n-form-item>
       <div class="modal-actions">
         <n-button secondary :disabled="saving" @click="close">取消</n-button>

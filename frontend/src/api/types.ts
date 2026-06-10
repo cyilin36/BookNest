@@ -68,6 +68,7 @@ export interface AuthSession {
 
 export interface SystemInfo {
   site_name: string
+  site_icon_url: string | null
   allow_registration: boolean
   library_review_required: boolean
   supported_formats: BookFormat[]
@@ -77,10 +78,18 @@ export interface SystemInfo {
 
 export interface SystemSettings {
   site_name: string
+  site_icon_url: string | null
   allow_registration: boolean
   library_review_required: boolean
   max_upload_size_mb: number
   default_user_storage_quota_mb: number
+}
+
+export type UpdateSystemSettingsRequest = Omit<SystemSettings, 'site_icon_url'>
+
+export interface SystemIconUploadResult {
+  site_icon_url: string
+  content_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/svg+xml' | 'image/x-icon'
 }
 
 export interface BookMeta {
@@ -111,6 +120,8 @@ export interface BookshelfItem {
   library_status: LibraryStatus | null
   favorite: boolean
   pinned: boolean
+  personal_category_id: number | null
+  tag_ids: number[]
   last_read_at: string | null
   added_at: string
   readable: boolean
@@ -129,6 +140,8 @@ export interface LibraryBook {
   library_status: LibraryStatus
   owner_user_id: number
   owner_username?: string | null
+  category_ids: number[]
+  tag_ids: number[]
   in_bookshelf: boolean
   bookshelf_id: number | null
   created_at: string
@@ -178,6 +191,7 @@ export interface ReaderSettings {
   theme: ThemeName
   font_size: number
   line_height: ReaderLineHeight
+  content_width: number
   font_family: ReaderFontFamily
 }
 

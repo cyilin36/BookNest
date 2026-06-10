@@ -21,7 +21,7 @@ export const useLibraryStore = defineStore('library', {
         this.books = response.data
         this.pagination = response.pagination
       } catch (error) {
-        this.error = error instanceof Error ? error.message : '公共图书馆加载失败'
+        this.error = error instanceof Error ? error.message : '图书馆加载失败'
         throw error
       } finally {
         this.loading = false

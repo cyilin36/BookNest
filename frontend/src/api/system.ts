@@ -1,5 +1,5 @@
 import { apiClient, unwrap } from './client'
-import type { SystemInfo, SystemSettings } from './types'
+import type { SystemInfo, SystemSettings, UpdateSystemSettingsRequest } from './types'
 
 export const systemApi = {
   info() {
@@ -8,7 +8,7 @@ export const systemApi = {
   adminSettings() {
     return unwrap<SystemSettings>(apiClient.get('/admin/system/settings'))
   },
-  updateAdminSettings(payload: SystemSettings) {
+  updateAdminSettings(payload: UpdateSystemSettingsRequest) {
     return unwrap<SystemSettings>(apiClient.put('/admin/system/settings', payload))
   }
 }

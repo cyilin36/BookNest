@@ -58,7 +58,7 @@ async function submit() {
       </button>
       <button class="target-card surface" :class="{ active: target === 'public' }" type="button" @click="target = 'public'">
         <Library :size="28" />
-        <strong>全站公共图书馆</strong>
+        <strong>全站图书馆</strong>
         <span>其他用户可引用加入，不复制物理文件。</span>
       </button>
     </div>

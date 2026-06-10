@@ -2,14 +2,25 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import PageShell from '@/components/common/PageShell.vue'
+import SiteBrandMark from '@/components/common/SiteBrandMark.vue'
 import { adminApi } from '@/api/admin'
+import { useSystemStore } from '@/stores/system'
 import type { SystemSettings } from '@/api/types'
 
 const message = useMessage()
+const system = useSystemStore()
 const loading = ref(false)
 const saving = ref(false)
+const iconUploading = ref(false)
+const iconDeleting = ref(false)
+const iconInputRef = ref<HTMLInputElement | null>(null)
+const iconMaxBytes = 2 * 1024 * 1024
+const iconAllowedExtensions = ['png', 'jpg', 'jpeg', 'webp', 'svg', 'ico']
+const iconAllowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon']
+const iconLimitText = '仅支持 PNG、JPG、WEBP、SVG、ICO，最大 2MB。'
 const form = reactive<SystemSettings>({
   site_name: 'BookNest',
+  site_icon_url: null,
   allow_registration: true,
   library_review_required: false,
   max_upload_size_mb: 100,
@@ -20,6 +31,7 @@ async function loadSettings() {
   loading.value = true
   try {
     Object.assign(form, await adminApi.settings())
+    system.applySystemInfo(form)
   } finally {
     loading.value = false
   }
@@ -28,7 +40,9 @@ async function loadSettings() {
 async function saveSettings() {
   saving.value = true
   try {
-    Object.assign(form, await adminApi.updateSettings({ ...form }))
+    const { site_icon_url: _siteIconUrl, ...payload } = form
+    Object.assign(form, await adminApi.updateSettings(payload))
+    system.applySystemInfo(form)
     message.success('系统设置已保存')
   } catch (error) {
     message.error(error instanceof Error ? error.message : '保存失败')
@@ -37,20 +51,78 @@ async function saveSettings() {
   }
 }
 
+async function uploadIcon(files: FileList | null) {
+  const file = files?.[0]
+  if (!file) return
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  const typeAllowed = !file.type || iconAllowedTypes.includes(file.type)
+  const extensionAllowed = iconAllowedExtensions.includes(extension)
+  if (!extensionAllowed || !typeAllowed) {
+    message.error(`站点图标格式不支持，${iconLimitText}`)
+    if (iconInputRef.value) iconInputRef.value.value = ''
+    return
+  }
+  if (file.size > iconMaxBytes) {
+    message.error(`站点图标过大，最大允许 2MB。当前文件约 ${(file.size / 1024 / 1024).toFixed(2)}MB。`)
+    if (iconInputRef.value) iconInputRef.value.value = ''
+    return
+  }
+  iconUploading.value = true
+  try {
+    const result = await adminApi.uploadSystemIcon(file)
+    form.site_icon_url = result.site_icon_url
+    system.setSiteIconUrl(result.site_icon_url)
+    message.success('站点图标已更新')
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : '上传失败'
+    message.error(`${reason}。${iconLimitText}`)
+  } finally {
+    iconUploading.value = false
+    if (iconInputRef.value) iconInputRef.value.value = ''
+  }
+}
+
+async function deleteIcon() {
+  iconDeleting.value = true
+  try {
+    await adminApi.deleteSystemIcon()
+    form.site_icon_url = null
+    system.setSiteIconUrl(null)
+    message.success('站点图标已删除')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '删除失败')
+  } finally {
+    iconDeleting.value = false
+  }
+}
+
 onMounted(loadSettings)
 </script>
 
 <template>
-  <PageShell title="系统设置" subtitle="编辑站点名称、注册开关、公共馆审核和上传限制。">
+  <PageShell title="系统设置" subtitle="编辑站点名称、注册开关、图书馆审核和上传限制。">
     <n-spin :show="loading">
       <n-form class="surface settings-form" label-placement="left" label-width="150" @submit.prevent="saveSettings">
         <n-form-item label="站点名称">
           <n-input v-model:value="form.site_name" placeholder="BookNest" />
         </n-form-item>
+        <n-form-item label="站点图标">
+          <div class="icon-setting">
+            <SiteBrandMark :size="56" />
+            <div class="icon-actions">
+              <input ref="iconInputRef" class="sr-only" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.ico,image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon" @change="uploadIcon(($event.target as HTMLInputElement).files)" />
+              <div class="toolbar">
+                <n-button secondary :loading="iconUploading" @click="iconInputRef?.click()">上传图标</n-button>
+                <n-button secondary type="error" :disabled="!form.site_icon_url" :loading="iconDeleting" @click="deleteIcon">删除图标</n-button>
+              </div>
+              <p>{{ iconLimitText }}</p>
+            </div>
+          </div>
+        </n-form-item>
         <n-form-item label="开放注册">
           <n-switch v-model:value="form.allow_registration" />
         </n-form-item>
-        <n-form-item label="公共馆需要审核">
+        <n-form-item label="图书馆需要审核">
           <n-switch v-model:value="form.library_review_required" />
         </n-form-item>
         <n-form-item label="最大上传 MB">
@@ -72,5 +144,33 @@ onMounted(loadSettings)
 .settings-form {
   max-width: 720px;
   padding: 18px;
+}
+
+.icon-setting {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.icon-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.icon-actions p {
+  margin: 0;
+  color: var(--color-text-sec);
+  font-size: 13px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 </style>

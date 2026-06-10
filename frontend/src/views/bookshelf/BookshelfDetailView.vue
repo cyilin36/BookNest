@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Download, Pencil } from 'lucide-vue-next'
 import { useMessage } from 'naive-ui'
 import { useRouter } from 'vue-router'
@@ -8,17 +8,25 @@ import BookCover from '@/components/book/BookCover.vue'
 import BookInfoEditModal, { type BookInfoEditPayload } from '@/components/book/BookInfoEditModal.vue'
 import FormatTag from '@/components/book/FormatTag.vue'
 import { bookshelfApi } from '@/api/bookshelf'
+import { useTaxonomyOptions } from '@/composables/useTaxonomyOptions'
 import { createBookDownloadName, downloadBlob } from '@/utils/download'
 import type { BookshelfItem } from '@/api/types'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
 const message = useMessage()
+const { categoryOptions, tagOptions, loading: taxonomyLoading } = useTaxonomyOptions()
 const book = ref<BookshelfItem | null>(null)
 const loading = ref(false)
 const downloading = ref(false)
 const editOpen = ref(false)
 const savingInfo = ref(false)
+
+const categoryLabel = computed(() => {
+  const categoryId = book.value?.personal_category_id
+  return categoryId ? categoryOptions.value.find((item) => item.value === categoryId)?.label || '' : ''
+})
+const tagLabels = computed(() => (book.value?.tag_ids || []).map((id) => tagOptions.value.find((item) => item.value === id)?.label).filter(Boolean))
 
 function formatUnreadableReason(reason: BookshelfItem['unreadable_reason']) {
   const labels: Record<NonNullable<BookshelfItem['unreadable_reason']>, string> = {
@@ -48,7 +56,13 @@ async function saveBookInfo(payload: BookInfoEditPayload) {
   if (!book.value) return
   savingInfo.value = true
   try {
-    book.value = await bookshelfApi.update(book.value.id, payload)
+    book.value = await bookshelfApi.update(book.value.id, {
+      title: payload.title,
+      author: payload.author,
+      description: payload.description,
+      personal_category_id: payload.category_ids?.[0] ?? null,
+      tag_ids: payload.tag_ids || []
+    })
     editOpen.value = false
     message.success('图书信息已更新')
   } catch (error) {
@@ -81,6 +95,10 @@ onMounted(async () => {
           </div>
           <h1>{{ book.title }}</h1>
           <p class="muted">{{ book.author || '未知作者' }}</p>
+          <div v-if="categoryLabel || tagLabels.length" class="taxonomy-line">
+            <n-tag v-if="categoryLabel" size="small" round>{{ categoryLabel }}</n-tag>
+            <n-tag v-for="label in tagLabels" :key="label" size="small" round>{{ label }}</n-tag>
+          </div>
           <p class="description">{{ book.description || '暂无简介' }}</p>
           <n-progress type="line" :percentage="Math.round(book.progress_percentage || 0)" :height="4" :show-indicator="false" />
           <div class="toolbar">
@@ -102,7 +120,11 @@ onMounted(async () => {
       v-if="book"
       v-model:show="editOpen"
       title="编辑图书信息"
-      :initial="{ title: book.title, author: book.author, description: book.description }"
+      :initial="{ title: book.title, author: book.author, description: book.description, category_ids: book.personal_category_id ? [book.personal_category_id] : [], tag_ids: book.tag_ids || [] }"
+      :category-options="categoryOptions"
+      :tag-options="tagOptions"
+      :taxonomy-loading="taxonomyLoading"
+      single-category
       :saving="savingInfo"
       @save="saveBookInfo"
     />
@@ -128,6 +150,13 @@ onMounted(async () => {
   color: var(--color-text-main);
   line-height: 1.7;
   white-space: pre-wrap;
+}
+
+.taxonomy-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 @media (max-width: 640px) {

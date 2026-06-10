@@ -25,6 +25,7 @@ var (
 	ErrValidationFailed     = NewError(http.StatusBadRequest, "validation_failed", "校验失败")
 	ErrPayloadTooLarge      = NewError(http.StatusRequestEntityTooLarge, "payload_too_large", "请求体过大")
 	ErrUnsupportedMedia     = NewError(http.StatusUnsupportedMediaType, "unsupported_media_type", "不支持的媒体类型")
+	ErrInvalidImageFormat   = NewError(http.StatusBadRequest, "invalid_image_format", "不支持的图片格式")
 	ErrInternal             = NewError(http.StatusInternalServerError, "internal_error", "服务内部错误")
 	ErrRegistrationDisable  = NewError(http.StatusForbidden, "registration_disabled", "当前关闭注册")
 	ErrUsernameExists       = NewError(http.StatusConflict, "username_exists", "用户名已存在")

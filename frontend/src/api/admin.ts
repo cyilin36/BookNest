@@ -1,5 +1,5 @@
 import { apiClient, unwrap, unwrapPage } from './client'
-import type { AdminStorageStats, BookFormat, LibraryStatus, PageQuery, SystemSettings } from './types'
+import type { AdminStorageStats, BookFormat, LibraryStatus, PageQuery, SystemIconUploadResult, SystemSettings, UpdateSystemSettingsRequest } from './types'
 import type { LibraryBook } from './types'
 
 export type AdminLibraryEditableStatus = Extract<LibraryStatus, 'approved' | 'hidden'>
@@ -28,7 +28,15 @@ export const adminApi = {
   settings() {
     return unwrap<SystemSettings>(apiClient.get('/admin/system/settings'))
   },
-  updateSettings(payload: SystemSettings) {
+  updateSettings(payload: UpdateSystemSettingsRequest) {
     return unwrap<SystemSettings>(apiClient.put('/admin/system/settings', payload))
+  },
+  uploadSystemIcon(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return unwrap<SystemIconUploadResult>(apiClient.post('/admin/system/icon', formData, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  },
+  deleteSystemIcon() {
+    return unwrap<{ site_icon_url: null }>(apiClient.delete('/admin/system/icon'))
   }
 }
