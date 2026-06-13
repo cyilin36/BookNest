@@ -10,6 +10,7 @@ export type ParseStatus = 'parsed' | 'partial' | 'failed'
 export type ThemeName = 'modern' | 'sepia' | 'dark'
 export type ReaderLineHeight = 1.5 | 1.8 | 2.2
 export type ReaderFontFamily = 'sans' | 'serif'
+export type ReaderMode = 'scroll' | 'page'
 
 export interface APIErrorBody {
   code: string
@@ -189,6 +190,7 @@ export interface ReadingProgress {
 
 export interface ReaderSettings {
   theme: ThemeName
+  reading_mode: ReaderMode
   font_size: number
   line_height: ReaderLineHeight
   content_width: number

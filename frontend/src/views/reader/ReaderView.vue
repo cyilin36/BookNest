@@ -3,12 +3,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { ArrowLeft, ChevronLeft, ChevronRight, List, Settings2 } from 'lucide-vue-next'
-import PageShell from '@/components/common/PageShell.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useReaderStore } from '@/stores/reader'
 import { useSettingsStore } from '@/stores/settings'
 import { useReaderProgress } from '@/composables/useReaderProgress'
-import type { ReaderChapter, ReaderChapterContent, ReaderLineHeight, ThemeName } from '@/api/types'
+import type { ReaderChapter, ReaderChapterContent, ReaderLineHeight, ReaderMode, ThemeName } from '@/api/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,14 +25,26 @@ const readableChapters = computed(() => reader.chapters.filter((chapter) => !cha
 const activeContent = ref<string>('')
 const activeContentType = ref<ReaderChapterContent['content_type']>('html')
 const readerTopRef = ref<HTMLElement | null>(null)
+const pageViewportRef = ref<HTMLElement | null>(null)
+const pageFlowRef = ref<HTMLElement | null>(null)
+const pageIndex = ref(0)
+const pageCount = ref(1)
+const pageWidth = ref(0)
 const isRestoringPosition = ref(false)
 const ignoreNextScrollMenuClose = ref(false)
 const chapterItemRefs = new Map<number, HTMLElement>()
+const readerPageGap = 32
+let pageRecalculationToken = 0
 
 interface SavedReaderPosition {
   chapterId: number
   scrollRatio: number
 }
+
+const isPageMode = computed(() => settings.reader.reading_mode === 'page')
+const pageFlowStyle = computed(() => ({
+  transform: isPageMode.value ? `translateX(-${pageIndex.value * (pageWidth.value + readerPageGap)}px)` : undefined
+}))
 
 function isReadableChapter(chapter: ReaderChapter | null | undefined) {
   return !!chapter && !chapter.is_volume
@@ -49,18 +60,32 @@ function fallbackReadableChapterFrom(id: number) {
   return reader.chapters.slice(chapterIndex).find(isReadableChapter) || [...reader.chapters].reverse().find(isReadableChapter) || null
 }
 
-function prevChapter() {
+function prevChapter(options: { restoreScrollRatio?: number | null } = {}) {
   const index = chapterIndexById(reader.activeChapterId)
   if (index > 0) {
-    loadChapter(readableChapters.value[index - 1].id)
+    loadChapter(readableChapters.value[index - 1].id, {
+      resetScroll: options.restoreScrollRatio === undefined,
+      restoreScrollRatio: options.restoreScrollRatio ?? null
+    })
   }
 }
 
-function nextChapter() {
+function nextChapter(options: { restoreScrollRatio?: number | null } = {}) {
   const index = chapterIndexById(reader.activeChapterId)
   if (index >= 0 && index < readableChapters.value.length - 1) {
-    loadChapter(readableChapters.value[index + 1].id)
+    loadChapter(readableChapters.value[index + 1].id, {
+      resetScroll: options.restoreScrollRatio === undefined,
+      restoreScrollRatio: options.restoreScrollRatio ?? null
+    })
   }
+}
+
+function prevChapterFromStart() {
+  prevChapter({ restoreScrollRatio: 0 })
+}
+
+function nextChapterFromStart() {
+  nextChapter({ restoreScrollRatio: 0 })
 }
 
 function openReaderMenu() {
@@ -129,6 +154,11 @@ function currentScrollRatio() {
   return clampScrollRatio(window.scrollY / scrollable)
 }
 
+function currentReadingRatio() {
+  if (!isPageMode.value || pageCount.value <= 1) return currentScrollRatio()
+  return clampScrollRatio(pageIndex.value / (pageCount.value - 1))
+}
+
 function encodeProgressValue(chapterId: number, scrollRatio: number) {
   return JSON.stringify({ chapterId, scrollRatio: Number(clampScrollRatio(scrollRatio).toFixed(4)) })
 }
@@ -168,6 +198,10 @@ function updateTheme(value: ThemeName) {
   settings.setTheme(value)
 }
 
+function updateReadingMode(value: ReaderMode) {
+  settings.updateReaderSettings({ reading_mode: value })
+}
+
 function updateLineHeight(value: ReaderLineHeight) {
   settings.updateReaderSettings({ line_height: value })
 }
@@ -189,6 +223,7 @@ async function scrollReaderToTop() {
   await nextTick()
   readerTopRef.value?.scrollIntoView({ block: 'start' })
   window.scrollTo({ top: 0, behavior: 'auto' })
+  pageIndex.value = 0
 }
 
 async function scrollReaderToRatio(scrollRatio: number) {
@@ -206,11 +241,105 @@ function saveCurrentPosition(immediate = false) {
   if (!reader.activeChapterId || isRestoringPosition.value) return
   const currentChapter = reader.chapters.find((chapter) => chapter.id === reader.activeChapterId)
   if (!isReadableChapter(currentChapter) || !activeContent.value) return
-  const scrollRatio = currentScrollRatio()
+  const scrollRatio = currentReadingRatio()
   const value = encodeProgressValue(reader.activeChapterId, scrollRatio)
   const percentage = chapterProgressPercentage(reader.activeChapterId, scrollRatio)
   const persist = immediate ? saveNow : save
   persist(progressType(), value, percentage)
+}
+
+function clampPageIndex(value: number) {
+  return Math.max(0, Math.min(Math.max(pageCount.value - 1, 0), value))
+}
+
+function setPageIndex(value: number, immediateSave = true) {
+  pageIndex.value = clampPageIndex(value)
+  if (immediateSave) saveCurrentPosition(true)
+}
+
+async function recalculatePages(targetRatio: number | null = null) {
+  await nextTick()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+  if (!isPageMode.value) {
+    pageWidth.value = 0
+    pageCount.value = 1
+    pageIndex.value = 0
+    return
+  }
+
+  const viewport = pageViewportRef.value
+  const flow = pageFlowRef.value
+  if (!viewport || !flow) return
+
+  const viewportStyle = window.getComputedStyle(viewport)
+  const horizontalPadding = Number.parseFloat(viewportStyle.paddingLeft) + Number.parseFloat(viewportStyle.paddingRight)
+  const verticalPadding = Number.parseFloat(viewportStyle.paddingTop) + Number.parseFloat(viewportStyle.paddingBottom)
+  const width = Math.max(1, viewport.clientWidth - horizontalPadding)
+  const height = Math.max(1, viewport.clientHeight - verticalPadding)
+  pageWidth.value = width
+  flow.style.setProperty('--reader-page-width', `${width}px`)
+  flow.style.setProperty('--reader-page-height', `${height}px`)
+  flow.style.setProperty('--reader-page-gap', `${readerPageGap}px`)
+
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+  const measuringFlow = flow.cloneNode(true) as HTMLElement
+  measuringFlow.style.position = 'absolute'
+  measuringFlow.style.left = '-10000px'
+  measuringFlow.style.top = '0'
+  measuringFlow.style.width = `${width}px`
+  measuringFlow.style.maxWidth = `${width}px`
+  measuringFlow.style.height = 'auto'
+  measuringFlow.style.visibility = 'hidden'
+  measuringFlow.style.pointerEvents = 'none'
+  measuringFlow.style.columnWidth = 'auto'
+  measuringFlow.style.columnGap = 'normal'
+  measuringFlow.style.transform = 'none'
+  measuringFlow.style.transition = 'none'
+  document.body.appendChild(measuringFlow)
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  const contentHeight = measuringFlow.scrollHeight
+  measuringFlow.remove()
+
+  const nextCount = Math.max(1, Math.ceil(contentHeight / height))
+  const ratio = targetRatio ?? currentReadingRatio()
+  pageCount.value = nextCount
+  pageIndex.value = Math.max(0, Math.min(nextCount - 1, Math.round(clampScrollRatio(ratio) * (nextCount - 1))))
+}
+
+function schedulePageRecalculation(targetRatio: number | null = null) {
+  if (!isPageMode.value) return
+  const token = ++pageRecalculationToken
+  ;[80, 240, 520].forEach((delay) => {
+    window.setTimeout(() => {
+      if (token === pageRecalculationToken && isPageMode.value) recalculatePages(targetRatio)
+    }, delay)
+  })
+}
+
+function prevPageOrChapter() {
+  if (!isPageMode.value) {
+    prevChapter()
+    return
+  }
+  if (pageIndex.value > 0) {
+    setPageIndex(pageIndex.value - 1)
+    return
+  }
+  prevChapter({ restoreScrollRatio: 1 })
+}
+
+function nextPageOrChapter() {
+  if (!isPageMode.value) {
+    nextChapter()
+    return
+  }
+  if (pageIndex.value < pageCount.value - 1) {
+    setPageIndex(pageIndex.value + 1)
+    return
+  }
+  nextChapter({ restoreScrollRatio: 0 })
 }
 
 function handleReaderScroll() {
@@ -223,6 +352,14 @@ function handleReaderScroll() {
   saveCurrentPosition()
 }
 
+function handleReaderResize() {
+  if (isPageMode.value) recalculatePages(currentReadingRatio())
+}
+
+function handleReaderAssetLoad() {
+  if (isPageMode.value) recalculatePages(currentReadingRatio())
+}
+
 function handleVisibilityChange() {
   if (document.visibilityState === 'hidden') saveCurrentPosition(true)
 }
@@ -231,11 +368,16 @@ async function loadChapter(chapterId: number, options: { resetScroll?: boolean; 
   const { resetScroll = true, restoreScrollRatio = null, saveProgress = true } = options
   const chapter = fallbackReadableChapterFrom(chapterId)
   if (!chapter) return
+  pageRecalculationToken += 1
   reader.activeChapterId = chapter.id
   const content = await reader.loadChapterContent(bookId, chapter.id)
   activeContentType.value = content.content_type
   activeContent.value = content.content
-  if (restoreScrollRatio !== null) {
+  if (isPageMode.value) {
+    await scrollReaderToTop()
+    await recalculatePages(restoreScrollRatio ?? 0)
+    schedulePageRecalculation(restoreScrollRatio ?? 0)
+  } else if (restoreScrollRatio !== null) {
     await scrollReaderToRatio(restoreScrollRatio)
   } else if (resetScroll) {
     await scrollReaderToTop()
@@ -255,6 +397,7 @@ onMounted(async () => {
       isRestoringPosition.value = false
     }
     window.addEventListener('scroll', handleReaderScroll, { passive: true })
+    window.addEventListener('resize', handleReaderResize, { passive: true })
     document.addEventListener('visibilitychange', handleVisibilityChange)
   } catch (error) {
     isRestoringPosition.value = false
@@ -265,6 +408,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   saveCurrentPosition(true)
   window.removeEventListener('scroll', handleReaderScroll)
+  window.removeEventListener('resize', handleReaderResize)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
@@ -274,8 +418,25 @@ watch(
     document.documentElement.style.setProperty('--reader-font-size', `${settings.reader.font_size}px`)
     document.documentElement.style.setProperty('--reader-line-height', String(settings.reader.line_height))
     document.documentElement.style.setProperty('--reader-content-width', settings.reader.content_width > 0 ? `${settings.reader.content_width}px` : '100%')
+    if (isPageMode.value) recalculatePages(currentReadingRatio())
   },
   { deep: true, immediate: true }
+)
+
+watch(
+  () => settings.reader.reading_mode,
+  async (mode, previousMode) => {
+    const ratio = previousMode === 'page' && pageCount.value > 1 ? pageIndex.value / (pageCount.value - 1) : currentScrollRatio()
+    if (mode === 'page') {
+      await scrollReaderToTop()
+      await recalculatePages(ratio)
+      schedulePageRecalculation(ratio)
+    } else {
+      pageCount.value = 1
+      pageIndex.value = 0
+      if (previousMode === 'page') await scrollReaderToRatio(ratio)
+    }
+  }
 )
 
 watch(chapterDrawer, (visible) => {
@@ -292,20 +453,25 @@ watch(
 
 <template>
   <main class="reader-shell">
-    <PageShell v-if="reader.bookMeta" :title="reader.bookMeta.title">
-      <section ref="readerTopRef" class="reader-panel surface" :class="{ 'is-fluid': settings.reader.content_width <= 0 }">
-        <h2 v-if="activeChapter && activeContentType !== 'html'" class="reader-chapter-title">{{ activeChapter.title }}</h2>
-        <div v-if="activeContent && activeContentType === 'html'" class="reader-content" v-html="activeContent" />
-        <div v-else-if="activeContent" class="reader-content reader-content-text" v-text="activeContent" />
+    <section v-if="reader.bookMeta" class="page reader-page" :class="{ 'is-page-mode': isPageMode }">
+      <section ref="readerTopRef" class="reader-panel surface" :class="{ 'is-fluid': settings.reader.content_width <= 0, 'is-page-mode': isPageMode }">
+        <div v-if="activeContent" ref="pageViewportRef" class="reader-page-viewport">
+          <div ref="pageFlowRef" class="reader-page-flow" :style="pageFlowStyle" @load.capture="handleReaderAssetLoad">
+            <h2 v-if="activeChapter && activeContentType !== 'html'" class="reader-chapter-title">{{ activeChapter.title }}</h2>
+            <div v-if="activeContentType === 'html'" class="reader-content" v-html="activeContent" />
+            <div v-else class="reader-content reader-content-text" v-text="activeContent" />
+          </div>
+        </div>
+        <div v-if="activeContent && isPageMode" class="reader-page-indicator">{{ pageIndex + 1 }} / {{ pageCount }}</div>
         <div v-if="activeContent" class="reader-tap-zones">
-          <button type="button" class="reader-tap-zone" aria-label="点击左侧切换上一章" :disabled="chapterIndexById(reader.activeChapterId) <= 0 && !readerMenuOpen" @click="handleReaderTap(prevChapter)" />
+          <button type="button" class="reader-tap-zone" :aria-label="isPageMode ? '点击左侧切换上一页' : '点击左侧切换上一章'" :disabled="!isPageMode && chapterIndexById(reader.activeChapterId) <= 0 && !readerMenuOpen" @click="handleReaderTap(prevPageOrChapter)" />
           <button type="button" class="reader-tap-zone" aria-label="点击中间打开或关闭阅读菜单" @click="handleReaderTap(openReaderMenu)" />
           <button
             type="button"
             class="reader-tap-zone"
-            aria-label="点击右侧切换下一章"
-            :disabled="(chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1) && !readerMenuOpen"
-            @click="handleReaderTap(nextChapter)"
+            :aria-label="isPageMode ? '点击右侧切换下一页' : '点击右侧切换下一章'"
+            :disabled="!isPageMode && (chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1) && !readerMenuOpen"
+            @click="handleReaderTap(nextPageOrChapter)"
           />
         </div>
         <EmptyState v-else title="暂无章节内容" description="后端未返回正文时可重试加载。">
@@ -313,16 +479,16 @@ watch(
         </EmptyState>
       </section>
       <div class="reader-bottom toolbar" :class="{ 'is-fluid': settings.reader.content_width <= 0 }">
-        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="prevChapter()">
+        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="prevChapterFromStart()">
           <template #icon><ChevronLeft :size="16" /></template>
           上一章
         </n-button>
-        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="nextChapter()">
+        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="nextChapterFromStart()">
           <template #icon><ChevronRight :size="16" /></template>
           下一章
         </n-button>
       </div>
-    </PageShell>
+    </section>
     <EmptyState v-else title="阅读器未加载" description="请返回书架后重新进入。">
       <n-button @click="$router.push('/bookshelf')">返回书架</n-button>
     </EmptyState>
@@ -359,6 +525,17 @@ watch(
             <n-radio value="dark">深色</n-radio>
           </n-space>
         </n-radio-group>
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>阅读模式</span>
+          </div>
+          <n-radio-group v-model:value="settings.reader.reading_mode" @update:value="updateReadingMode">
+            <n-space>
+              <n-radio value="scroll">滚动</n-radio>
+              <n-radio value="page">分页</n-radio>
+            </n-space>
+          </n-radio-group>
+        </div>
         <n-slider v-model:value="settings.reader.font_size" :min="14" :max="26" :step="1" :tooltip="false" @update:value="updateFontSize" />
         <div class="setting-group">
           <div class="setting-label">
@@ -398,7 +575,7 @@ watch(
       </section>
       <section class="reader-menu">
         <div class="reader-menu-actions">
-          <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="runWithMenuKept(prevChapter)">
+          <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="runWithMenuKept(prevChapterFromStart)">
             <template #icon><ChevronLeft :size="16" /></template>
             上一章
           </n-button>
@@ -406,7 +583,7 @@ watch(
             <template #icon><List :size="16" /></template>
             目录
           </n-button>
-          <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="runWithMenuKept(nextChapter)">
+          <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="runWithMenuKept(nextChapterFromStart)">
             <template #icon><ChevronRight :size="16" /></template>
             下一章
           </n-button>
@@ -417,6 +594,19 @@ watch(
 </template>
 
 <style scoped>
+.reader-page {
+  display: grid;
+  min-height: calc(100vh - 56px);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.reader-page.is-page-mode {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .reader-panel,
 .reader-bottom {
   padding: 14px;
@@ -441,6 +631,40 @@ watch(
   min-height: 54vh;
 }
 
+.reader-panel.is-page-mode {
+  height: auto;
+  min-height: 0;
+  padding: 0;
+}
+
+.reader-page-viewport {
+  max-width: 100%;
+}
+
+.reader-panel.is-page-mode .reader-page-viewport {
+  height: 100%;
+  overflow: hidden;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.reader-page-flow {
+  max-width: 100%;
+}
+
+.reader-panel.is-page-mode .reader-page-flow {
+  width: var(--reader-page-width, 100%);
+  height: var(--reader-page-height, 100%);
+  column-width: var(--reader-page-width, 100%);
+  column-gap: var(--reader-page-gap, 32px);
+  transition: transform 0.16s ease;
+  will-change: transform;
+}
+
+.reader-panel.is-page-mode .reader-content {
+  overflow: visible;
+}
+
 .reader-chapter-title {
   margin: 0 0 1.25em;
   color: var(--color-text-main);
@@ -455,6 +679,20 @@ watch(
   white-space: pre-wrap;
   overflow-wrap: anywhere !important;
   word-break: break-word !important;
+}
+
+.reader-page-indicator {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 2;
+  padding: 3px 8px;
+  color: var(--color-text-sec);
+  background: color-mix(in srgb, var(--color-bg-card) 88%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 12px;
+  pointer-events: none;
 }
 
 .reader-tap-zones {
@@ -478,6 +716,8 @@ watch(
 
 .reader-bottom {
   justify-content: center;
+  align-self: end;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
 .reader-menu-layer {
@@ -550,6 +790,14 @@ watch(
 }
 
 @media (max-width: 560px) {
+  .reader-panel.is-page-mode {
+    min-height: 360px;
+  }
+
+  .reader-panel.is-page-mode .reader-page-viewport {
+    padding: 18px;
+  }
+
   .reader-menu-actions {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }

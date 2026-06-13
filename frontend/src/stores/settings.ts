@@ -6,6 +6,7 @@ const LEGACY_KEY = 'book-reader.settings'
 
 const defaults: ReaderSettings = {
   theme: 'modern',
+  reading_mode: 'scroll',
   font_size: window.matchMedia('(max-width: 720px)').matches ? 16 : 18,
   line_height: 1.8,
   content_width: window.matchMedia('(max-width: 720px)').matches ? 0 : 760,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useSettingsStore } from '@/stores/settings'
 import PageShell from '@/components/common/PageShell.vue'
-import type { ReaderLineHeight, ThemeName } from '@/api/types'
+import type { ReaderLineHeight, ReaderMode, ThemeName } from '@/api/types'
 
 const settings = useSettingsStore()
 
@@ -11,6 +11,10 @@ function updateTheme(value: ThemeName) {
 
 function updateLineHeight(value: ReaderLineHeight) {
   settings.updateReaderSettings({ line_height: value })
+}
+
+function updateReadingMode(value: ReaderMode) {
+  settings.updateReaderSettings({ reading_mode: value })
 }
 
 function updateFontSize(value: number) {
@@ -26,6 +30,12 @@ function updateContentWidth(value: number) {
   <PageShell title="阅读设置" subtitle="本地保存主题、字号、行距、宽度和字体">
     <div class="surface settings-card">
       <n-select v-model:value="settings.reader.theme" :options="[{ label: '现代', value: 'modern' }, { label: '纸页', value: 'sepia' }, { label: '深色', value: 'dark' }]" @update:value="updateTheme" />
+      <n-radio-group v-model:value="settings.reader.reading_mode" @update:value="updateReadingMode">
+        <n-space>
+          <n-radio value="scroll">滚动</n-radio>
+          <n-radio value="page">分页</n-radio>
+        </n-space>
+      </n-radio-group>
       <n-slider v-model:value="settings.reader.font_size" :min="14" :max="26" :step="1" :tooltip="false" @update:value="updateFontSize" />
       <div class="setting-group">
         <div class="setting-label">
