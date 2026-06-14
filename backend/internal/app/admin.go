@@ -248,21 +248,24 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 		common.RespondError(c, middleware.GetRequestID(c), err)
 		return
 	}
+	ownedBookIDs := make([]int64, 0, len(ownedBooks))
 	for _, book := range ownedBooks {
+		ownedBookIDs = append(ownedBookIDs, book.ID)
 		if err := s.removeBookFiles(book); err != nil && !os.IsNotExist(err) {
 			common.RespondError(c, middleware.GetRequestID(c), err)
 			return
 		}
 	}
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		ownedBookIDs := make([]int64, 0, len(ownedBooks))
-		for _, book := range ownedBooks {
-			ownedBookIDs = append(ownedBookIDs, book.ID)
-		}
-		shelfIDs, err := userDeletionBookshelfIDs(tx, id, ownedBookIDs)
-		if err != nil {
-			return err
-		}
+	shelfIDs, err := userDeletionBookshelfIDs(s.db, id, ownedBookIDs)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if err := s.removeBookshelfPersonalCoverFiles(shelfIDs); err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if len(shelfIDs) > 0 {
 			if err := tx.Where("bookshelf_id IN ?", shelfIDs).Delete(&model.BookshelfTag{}).Error; err != nil {
 				return err

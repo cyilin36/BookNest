@@ -26,6 +26,7 @@ const statusChanging = ref(false)
 const downloading = ref(false)
 const editOpen = ref(false)
 const savingInfo = ref(false)
+const coverRevision = ref(0)
 
 const isOwner = computed(() => Boolean(book.value && auth.user?.id === book.value.owner_user_id))
 const canJoin = computed(() => Boolean(book.value && book.value.library_status === 'approved' && !book.value.in_bookshelf))
@@ -67,7 +68,13 @@ async function saveBookInfo(payload: BookInfoEditPayload) {
   if (!book.value || !isOwner.value) return
   savingInfo.value = true
   try {
-    book.value = await libraryApi.update(book.value.id, payload)
+    const { cover: _cover, ...infoPayload } = payload
+    let updated = await libraryApi.update(book.value.id, infoPayload)
+    if (payload.cover) {
+      updated = await libraryApi.updateCover(book.value.id, payload.cover)
+      coverRevision.value = Date.now()
+    }
+    book.value = updated
     editOpen.value = false
     message.success('图书信息已更新')
   } catch (error) {
@@ -116,7 +123,7 @@ onMounted(async () => {
   <PageShell title="图书详情">
     <n-spin :show="loading">
       <div v-if="book" class="detail surface">
-        <BookCover :src="book.cover_url" :title="book.title" />
+        <BookCover :src="book.cover_url" :title="book.title" :revision="coverRevision" />
         <section class="detail-info">
           <div class="toolbar">
             <FormatTag :format="book.format" />
@@ -158,6 +165,8 @@ onMounted(async () => {
       :tag-options="tagOptions"
       :taxonomy-loading="taxonomyLoading"
       :saving="savingInfo"
+      allow-cover
+      :current-cover-url="book.cover_url"
       @save="saveBookInfo"
     />
   </PageShell>

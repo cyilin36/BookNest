@@ -21,6 +21,7 @@ const loading = ref(false)
 const downloading = ref(false)
 const editOpen = ref(false)
 const savingInfo = ref(false)
+const coverRevision = ref(0)
 
 const categoryLabel = computed(() => {
   const categoryId = book.value?.personal_category_id
@@ -56,13 +57,18 @@ async function saveBookInfo(payload: BookInfoEditPayload) {
   if (!book.value) return
   savingInfo.value = true
   try {
-    book.value = await bookshelfApi.update(book.value.id, {
+    let updated = await bookshelfApi.update(book.value.id, {
       title: payload.title,
       author: payload.author,
       description: payload.description,
       personal_category_id: payload.category_ids?.[0] ?? null,
       tag_ids: payload.tag_ids || []
     })
+    if (payload.cover) {
+      updated = await bookshelfApi.updateCover(book.value.id, payload.cover)
+      coverRevision.value = Date.now()
+    }
+    book.value = updated
     editOpen.value = false
     message.success('图书信息已更新')
   } catch (error) {
@@ -86,7 +92,7 @@ onMounted(async () => {
   <PageShell title="书架详情" subtitle="查看个人书架项状态和继续阅读">
     <n-spin :show="loading">
       <div v-if="book" class="detail surface">
-        <BookCover :src="book.cover_url" :title="book.title" />
+        <BookCover :src="book.cover_url" :title="book.title" :revision="coverRevision" />
         <section class="detail-info">
           <div class="toolbar">
             <FormatTag :format="book.format" />
@@ -126,6 +132,8 @@ onMounted(async () => {
       :taxonomy-loading="taxonomyLoading"
       single-category
       :saving="savingInfo"
+      allow-cover
+      :current-cover-url="book.cover_url"
       @save="saveBookInfo"
     />
   </PageShell>

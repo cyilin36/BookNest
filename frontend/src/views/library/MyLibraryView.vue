@@ -26,6 +26,7 @@ const statusChangingId = ref<number | null>(null)
 const downloadingId = ref<number | null>(null)
 const editingBook = ref<LibraryBook | null>(null)
 const savingInfo = ref(false)
+const coverRevisions = ref<Record<number, number>>({})
 const pagination = ref<Pagination>({ page: 1, page_size: 12, total: 0 })
 const filters = reactive({
   status: 'all' as OwnLibraryStatusFilter
@@ -113,7 +114,12 @@ async function saveBookInfo(payload: BookInfoEditPayload) {
   if (!editingBook.value) return
   savingInfo.value = true
   try {
-    const updated = await libraryApi.update(editingBook.value.id, payload)
+    const { cover: _cover, ...infoPayload } = payload
+    let updated = await libraryApi.update(editingBook.value.id, infoPayload)
+    if (payload.cover) {
+      updated = await libraryApi.updateCover(editingBook.value.id, payload.cover)
+      coverRevisions.value = { ...coverRevisions.value, [updated.id]: Date.now() }
+    }
     replaceBook(updated)
     editingBook.value = null
     message.success('图书信息已更新')
@@ -159,7 +165,7 @@ onMounted(() => fetchPage())
       <div v-else class="grid-books my-library-grid">
         <article v-for="book in books" :key="book.id" class="own-book-card surface">
           <button class="cover-button" type="button" @click="router.push(`/library/${book.id}`)">
-            <BookCover :src="book.cover_url" :title="book.title" />
+            <BookCover :src="book.cover_url" :title="book.title" :revision="coverRevisions[book.id] || 0" />
           </button>
           <div class="own-book-info">
             <BookTitle class="book-title" :title="book.title" @click="router.push(`/library/${book.id}`)" />
@@ -220,6 +226,8 @@ onMounted(() => fetchPage())
       :tag-options="tagOptions"
       :taxonomy-loading="taxonomyLoading"
       :saving="savingInfo"
+      allow-cover
+      :current-cover-url="editingBook?.cover_url"
       @update:show="($event) => { if (!$event) editingBook = null }"
       @save="saveBookInfo"
     />

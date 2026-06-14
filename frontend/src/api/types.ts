@@ -199,6 +199,7 @@ export interface ReaderSettings {
 
 export interface UploadBookRequest {
   file: File
+  cover?: File | null
   title?: string
   author?: string
   description?: string

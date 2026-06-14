@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,7 +26,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const epubResourceURLTTL = 30 * time.Minute
+const (
+	epubResourceURLTTL = 30 * time.Minute
+	maxCoverImageBytes = 5 * 1024 * 1024
+)
 
 func (s *Server) uploadPrivateBook(c *gin.Context) {
 	s.uploadBook(c, model.BookVisibilityPrivate)
@@ -97,6 +101,15 @@ func (s *Server) uploadBook(c *gin.Context, visibility string) {
 		common.RespondError(c, middleware.GetRequestID(c), err)
 		return
 	}
+	coverFile, coverExt, hasManualCover, err := s.coverUpload(c, "cover")
+	if err != nil {
+		_ = os.Remove(stored.AbsolutePath)
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if coverFile != nil {
+		defer coverFile.Close()
+	}
 	book := model.Book{
 		Title: title, Author: nullableString(c.PostForm("author")),
 		Description:      nullableString(c.PostForm("description")),
@@ -114,7 +127,17 @@ func (s *Server) uploadBook(c *gin.Context, visibility string) {
 		if err := tx.Create(&book).Error; err != nil {
 			return err
 		}
-		if format == model.BookFormatEPUB {
+		if hasManualCover {
+			coverRel, coverAbs, err := s.store.SaveCoverFile(coverFile, "books", book.ID, coverExt)
+			if err != nil {
+				return err
+			}
+			savedCoverAbs = coverAbs
+			book.CoverPath = &coverRel
+			if err := tx.Model(&book).Updates(map[string]any{"cover_path": coverRel, "updated_at": time.Now()}).Error; err != nil {
+				return err
+			}
+		} else if format == model.BookFormatEPUB {
 			if cover, err := parser.ExtractEPUBCover(stored.AbsolutePath); err == nil && cover != nil {
 				coverRel, coverAbs, err := s.store.SaveCoverBytes(cover.Data, book.ID, filepath.Ext(cover.Name))
 				if err == nil {
@@ -321,6 +344,103 @@ func (s *Server) downloadBookshelfBook(c *gin.Context) {
 	s.downloadBookFile(c, book, displayTitle)
 }
 
+func (s *Server) bookshelfCover(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	item, book, err := s.getBookshelfWithBook(middleware.CurrentUser(c).ID, id)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+	coverPath := effectiveBookshelfCoverPath(item, book)
+	if coverPath == nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookFileMissing)
+		return
+	}
+	s.serveCover(c, *coverPath)
+}
+
+func (s *Server) updateBookshelfCover(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	u := middleware.CurrentUser(c)
+	item, book, err := s.getBookshelfWithBook(u.ID, id)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+	file, ext, hasCover, err := s.coverUpload(c, "cover")
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if !hasCover {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
+		return
+	}
+	defer file.Close()
+
+	var rel, abs string
+	var oldCover *string
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if item.SourceType == model.BookshelfSourceUploaded && book.Visibility == model.BookVisibilityPrivate {
+			coverRel, coverAbs, err := s.store.SaveCoverFile(file, "books", book.ID, ext)
+			if err != nil {
+				return err
+			}
+			rel, abs = coverRel, coverAbs
+			oldCover = book.CoverPath
+			res := tx.Model(&model.Book{}).Where("id = ? AND owner_user_id = ? AND visibility = ? AND deleted_at IS NULL", book.ID, u.ID, model.BookVisibilityPrivate).
+				Updates(map[string]any{"cover_path": coverRel, "updated_at": time.Now()})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return common.ErrNotFound
+			}
+			book.CoverPath = &coverRel
+			return nil
+		}
+
+		coverRel, coverAbs, err := s.store.SaveCoverFile(file, "bookshelves", item.ID, ext)
+		if err != nil {
+			return err
+		}
+		rel, abs = coverRel, coverAbs
+		oldCover = item.PersonalCoverPath
+		res := tx.Model(&model.Bookshelf{}).Where("id = ? AND user_id = ? AND status = ?", item.ID, u.ID, model.BookshelfStatusActive).
+			Updates(map[string]any{"personal_cover_path": coverRel})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return common.ErrNotFound
+		}
+		item.PersonalCoverPath = &coverRel
+		return nil
+	})
+	if err != nil {
+		if abs != "" {
+			_ = os.Remove(abs)
+		}
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if oldCover != nil && *oldCover != "" && *oldCover != rel {
+		_ = s.removeCoverFile(*oldCover)
+	}
+	item, book, err = s.getBookshelfWithBook(u.ID, id)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+	common.RespondJSON(c, middleware.GetRequestID(c), s.bookshelfDTO(item, book, s.bookshelfProgressFor(u.ID, book.ID)))
+}
+
 func (s *Server) updateBookshelf(c *gin.Context) {
 	id, ok := parseID(c, "id")
 	if !ok {
@@ -486,6 +606,53 @@ func (s *Server) updateBookshelf(c *gin.Context) {
 	common.RespondJSON(c, middleware.GetRequestID(c), s.bookshelfDTO(item, book, s.bookshelfProgressFor(u.ID, book.ID)))
 }
 
+func (s *Server) updateOwnLibraryBookCover(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	u := middleware.CurrentUser(c)
+	var b model.Book
+	if err := s.db.First(&b, "id = ? AND visibility = ? AND owner_user_id = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic, u.ID).Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
+		return
+	}
+	file, ext, hasCover, err := s.coverUpload(c, "cover")
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if !hasCover {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
+		return
+	}
+	defer file.Close()
+	coverRel, coverAbs, err := s.store.SaveCoverFile(file, "books", b.ID, ext)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	oldCover := b.CoverPath
+	res := s.db.Model(&model.Book{}).Where("id = ? AND visibility = ? AND owner_user_id = ? AND deleted_at IS NULL", id, model.BookVisibilityPublic, u.ID).
+		Updates(map[string]any{"cover_path": coverRel, "updated_at": time.Now()})
+	if res.Error != nil {
+		_ = os.Remove(coverAbs)
+		common.RespondError(c, middleware.GetRequestID(c), res.Error)
+		return
+	}
+	if res.RowsAffected == 0 {
+		_ = os.Remove(coverAbs)
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookNotFound)
+		return
+	}
+	if oldCover != nil && *oldCover != "" && *oldCover != coverRel {
+		_ = s.removeCoverFile(*oldCover)
+	}
+	b.CoverPath = &coverRel
+	b.UpdatedAt = time.Now()
+	common.RespondJSON(c, middleware.GetRequestID(c), s.libraryDTO(b, u.Username, s.activeBookshelfID(u.ID, b.ID)))
+}
+
 func (s *Server) deleteBookshelf(c *gin.Context) {
 	id, ok := parseID(c, "id")
 	if !ok {
@@ -531,6 +698,13 @@ func (s *Server) deleteBookshelf(c *gin.Context) {
 }
 
 func (s *Server) hardDeleteBookData(bookID int64, visibility string) error {
+	var personalCoverPaths []string
+	if err := s.db.Model(&model.Bookshelf{}).Where("book_id = ? AND personal_cover_path IS NOT NULL", bookID).Pluck("personal_cover_path", &personalCoverPaths).Error; err != nil {
+		return err
+	}
+	if err := s.removeCoverFiles(personalCoverPaths); err != nil {
+		return err
+	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var shelfIDs []int64
 		if err := tx.Model(&model.Bookshelf{}).Where("book_id = ?", bookID).Pluck("id", &shelfIDs).Error; err != nil {
@@ -1161,6 +1335,53 @@ func bookBodyUpdates(raw map[string]json.RawMessage) (map[string]any, error) {
 	return updates, nil
 }
 
+func (s *Server) coverUpload(c *gin.Context, field string) (multipart.File, string, bool, error) {
+	file, header, err := c.Request.FormFile(field)
+	if err != nil {
+		if err == http.ErrMissingFile {
+			return nil, "", false, nil
+		}
+		return nil, "", false, common.ErrValidationFailed
+	}
+	if header.Size > maxCoverImageBytes {
+		_ = file.Close()
+		return nil, "", false, common.ErrPayloadTooLarge
+	}
+	sniff := make([]byte, 512)
+	n, readErr := file.Read(sniff)
+	if readErr != nil && readErr != io.EOF {
+		_ = file.Close()
+		return nil, "", false, readErr
+	}
+	if n == 0 {
+		_ = file.Close()
+		return nil, "", false, common.ErrInvalidImageFormat
+	}
+	ext, ok := detectCoverImageExt(sniff[:n])
+	if !ok {
+		_ = file.Close()
+		return nil, "", false, common.ErrInvalidImageFormat
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		_ = file.Close()
+		return nil, "", false, err
+	}
+	return file, ext, true, nil
+}
+
+func detectCoverImageExt(data []byte) (string, bool) {
+	switch http.DetectContentType(data) {
+	case "image/png":
+		return ".png", true
+	case "image/jpeg":
+		return ".jpg", true
+	}
+	if len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP" {
+		return ".webp", true
+	}
+	return "", false
+}
+
 func (s *Server) getBookshelfWithBook(userID, id int64) (model.Bookshelf, model.Book, error) {
 	var item model.Bookshelf
 	if err := s.db.First(&item, "id = ? AND user_id = ? AND status = ?", id, userID, model.BookshelfStatusActive).Error; err != nil {
@@ -1203,7 +1424,15 @@ func (s *Server) bookshelfDTO(item model.Bookshelf, b model.Book, progress *floa
 			reason = &r
 		}
 	}
-	return BookshelfItemDTO{ID: item.ID, BookID: b.ID, Title: title, Author: author, Description: description, Format: b.Format, CoverURL: coverURL(b.ID, b.CoverPath), SourceType: item.SourceType, Visibility: b.Visibility, LibraryStatus: b.LibraryStatus, Favorite: item.Favorite, Pinned: item.Pinned, LastReadAt: item.LastReadAt, AddedAt: item.AddedAt, Readable: readable, UnreadableReason: reason, ProgressPercentage: progress}
+	effectiveCoverPath := effectiveBookshelfCoverPath(item, b)
+	return BookshelfItemDTO{ID: item.ID, BookID: b.ID, Title: title, Author: author, Description: description, Format: b.Format, CoverURL: bookshelfCoverURL(item.ID, effectiveCoverPath), SourceType: item.SourceType, Visibility: b.Visibility, LibraryStatus: b.LibraryStatus, Favorite: item.Favorite, Pinned: item.Pinned, LastReadAt: item.LastReadAt, AddedAt: item.AddedAt, Readable: readable, UnreadableReason: reason, ProgressPercentage: progress}
+}
+
+func effectiveBookshelfCoverPath(item model.Bookshelf, b model.Book) *string {
+	if item.SourceType == model.BookshelfSourceLibrary && item.PersonalCoverPath != nil && strings.TrimSpace(*item.PersonalCoverPath) != "" {
+		return item.PersonalCoverPath
+	}
+	return b.CoverPath
 }
 
 func (s *Server) bookshelfProgressFor(userID, bookID int64) *float64 {
@@ -1296,6 +1525,40 @@ func (s *Server) removeBookFiles(book model.Book) error {
 		}
 	}
 	return nil
+}
+
+func (s *Server) removeCoverFile(relative string) error {
+	coverPath, err := s.store.CoverPath(relative)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(coverPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) removeCoverFiles(paths []string) error {
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		if err := s.removeCoverFile(p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) removeBookshelfPersonalCoverFiles(shelfIDs []int64) error {
+	if len(shelfIDs) == 0 {
+		return nil
+	}
+	var paths []string
+	if err := s.db.Model(&model.Bookshelf{}).Where("id IN ? AND personal_cover_path IS NOT NULL", shelfIDs).Pluck("personal_cover_path", &paths).Error; err != nil {
+		return err
+	}
+	return s.removeCoverFiles(paths)
 }
 
 func (s *Server) bookFileExists(book model.Book) bool {
@@ -1446,7 +1709,11 @@ func (s *Server) readerCover(c *gin.Context) {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookFileMissing)
 		return
 	}
-	path, err := s.store.CoverPath(*b.CoverPath)
+	s.serveCover(c, *b.CoverPath)
+}
+
+func (s *Server) serveCover(c *gin.Context, coverPath string) {
+	path, err := s.store.CoverPath(coverPath)
 	if err != nil {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrBookFileMissing)
 		return

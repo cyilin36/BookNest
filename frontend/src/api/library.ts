@@ -30,6 +30,11 @@ export const libraryApi = {
   update(id: number, payload: UpdateLibraryBookInfoRequest) {
     return unwrap<LibraryBook>(apiClient.patch(`/library/books/${id}`, payload))
   },
+  updateCover(id: number, file: File) {
+    const formData = new FormData()
+    formData.append('cover', file)
+    return unwrap<LibraryBook>(apiClient.put(`/library/books/${id}/cover`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  },
   upload(formData: FormData) {
     return unwrap<LibraryBook>(apiClient.post('/library/books/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }))
   },

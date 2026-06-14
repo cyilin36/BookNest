@@ -37,6 +37,7 @@ type Bookshelf struct {
 	PersonalTitle       *string    `gorm:"column:personal_title" json:"-"`
 	PersonalAuthor      *string    `gorm:"column:personal_author" json:"-"`
 	PersonalDescription *string    `gorm:"column:personal_description" json:"-"`
+	PersonalCoverPath   *string    `gorm:"column:personal_cover_path" json:"-"`
 	PersonalCategoryID  *int64     `gorm:"column:personal_category_id" json:"-"`
 	AddedAt             time.Time  `gorm:"column:added_at" json:"added_at"`
 	LastReadAt          *time.Time `gorm:"column:last_read_at" json:"last_read_at"`

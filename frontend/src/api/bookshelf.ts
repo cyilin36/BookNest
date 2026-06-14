@@ -36,6 +36,11 @@ export const bookshelfApi = {
   update(id: number, payload: UpdateBookshelfItemRequest) {
     return unwrap<BookshelfItem>(apiClient.patch(`/bookshelf/${id}`, payload))
   },
+  updateCover(id: number, file: File) {
+    const formData = new FormData()
+    formData.append('cover', file)
+    return unwrap<BookshelfItem>(apiClient.put(`/bookshelf/${id}/cover`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  },
   remove(id: number) {
     return unwrap<Record<string, never>>(apiClient.delete(`/bookshelf/${id}`))
   },

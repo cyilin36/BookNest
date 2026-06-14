@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import CoverUploadField from './CoverUploadField.vue'
 
 export interface BookInfoEditPayload {
   title: string
@@ -7,6 +8,7 @@ export interface BookInfoEditPayload {
   description: string | null
   category_ids?: number[] | null
   tag_ids?: number[] | null
+  cover?: File | null
 }
 
 const props = defineProps<{
@@ -18,12 +20,16 @@ const props = defineProps<{
   taxonomyLoading?: boolean
   singleCategory?: boolean
   saving?: boolean
+  allowCover?: boolean
+  currentCoverUrl?: string | null
 }>()
 
 const emit = defineEmits<{
   'update:show': [value: boolean]
   save: [payload: BookInfoEditPayload]
 }>()
+
+const cover = ref<File | null>(null)
 
 const form = reactive({
   title: '',
@@ -51,6 +57,7 @@ watch(
     form.description = props.initial.description || ''
     form.category_ids = props.initial.category_ids || []
     form.tag_ids = props.initial.tag_ids || []
+    cover.value = null
   },
   { immediate: true }
 )
@@ -68,7 +75,8 @@ function submit() {
     author: form.author.trim() || null,
     description: form.description.trim() || null,
     category_ids: props.categoryOptions ? form.category_ids : undefined,
-    tag_ids: props.tagOptions ? form.tag_ids : undefined
+    tag_ids: props.tagOptions ? form.tag_ids : undefined,
+    cover: props.allowCover ? cover.value : undefined
   })
 }
 </script>
@@ -97,6 +105,9 @@ function submit() {
       </n-form-item>
       <n-form-item v-if="tagOptions" label="标签">
         <n-select v-model:value="form.tag_ids" multiple clearable :loading="taxonomyLoading" :options="tagOptions" placeholder="可选" />
+      </n-form-item>
+      <n-form-item v-if="allowCover" label="封面">
+        <CoverUploadField v-model:file="cover" :current-url="currentCoverUrl" :disabled="saving" />
       </n-form-item>
       <div class="modal-actions">
         <n-button secondary :disabled="saving" @click="close">取消</n-button>

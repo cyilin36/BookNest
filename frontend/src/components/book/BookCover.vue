@@ -6,6 +6,7 @@ import { apiClient } from '@/api/client'
 const props = defineProps<{
   src?: string | null
   title: string
+  revision?: number | string
 }>()
 
 const imageUrl = ref<string | null>(null)
@@ -41,8 +42,8 @@ async function loadProtectedImage(src: string) {
 const shouldShowFallback = computed(() => !props.src || failed.value)
 
 watch(
-  () => props.src,
-  (src) => {
+  () => [props.src, props.revision] as const,
+  ([src]) => {
     if (src) {
       loadProtectedImage(src)
     } else {

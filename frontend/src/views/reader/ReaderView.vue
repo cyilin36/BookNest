@@ -27,13 +27,17 @@ const activeContentType = ref<ReaderChapterContent['content_type']>('html')
 const readerTopRef = ref<HTMLElement | null>(null)
 const pageViewportRef = ref<HTMLElement | null>(null)
 const pageFlowRef = ref<HTMLElement | null>(null)
+const crossChapterTrackRef = ref<HTMLElement | null>(null)
 const pageIndex = ref(0)
 const pageCount = ref(1)
 const pageWidth = ref(0)
+const pageHeight = ref(0)
+const settlingCrossChapterPageTurn = ref(false)
 const isRestoringPosition = ref(false)
 const ignoreNextScrollMenuClose = ref(false)
 const chapterItemRefs = new Map<number, HTMLElement>()
 const readerPageGap = 32
+const crossChapterAnimationDurationMs = 260
 let pageRecalculationToken = 0
 
 interface SavedReaderPosition {
@@ -41,10 +45,46 @@ interface SavedReaderPosition {
   scrollRatio: number
 }
 
+interface PageTurnSnapshot {
+  chapterId: number
+  chapterTitle: string
+  contentType: ReaderChapterContent['content_type']
+  content: string
+  pageIndex: number
+  pageCount: number
+}
+
+interface CrossChapterPageTurn {
+  direction: 'prev' | 'next'
+  current: PageTurnSnapshot
+  target: PageTurnSnapshot
+  offset: number
+}
+
+interface PreparedAdjacentPage {
+  chapterId: number
+  content: ReaderChapterContent
+  pageCount: number
+}
+
 const isPageMode = computed(() => settings.reader.reading_mode === 'page')
+const crossChapterPageTurn = ref<CrossChapterPageTurn | null>(null)
+const preparedAdjacentPages = ref<{ prev: PreparedAdjacentPage | null; next: PreparedAdjacentPage | null }>({ prev: null, next: null })
+const pageDistance = computed(() => pageWidth.value + readerPageGap)
 const pageFlowStyle = computed(() => ({
   transform: isPageMode.value ? `translateX(-${pageIndex.value * (pageWidth.value + readerPageGap)}px)` : undefined
 }))
+const crossChapterPanes = computed(() => {
+  const turn = crossChapterPageTurn.value
+  if (!turn) return []
+  return turn.direction === 'prev' ? [turn.target, turn.current] : [turn.current, turn.target]
+})
+const crossChapterTrackStyle = computed(() => {
+  const turn = crossChapterPageTurn.value
+  return {
+    transform: `translateX(${turn?.offset || 0}px)`
+  }
+})
 
 function isReadableChapter(chapter: ReaderChapter | null | undefined) {
   return !!chapter && !chapter.is_volume
@@ -226,6 +266,12 @@ async function scrollReaderToTop() {
   pageIndex.value = 0
 }
 
+async function scrollReaderViewportToTop() {
+  await nextTick()
+  readerTopRef.value?.scrollIntoView({ block: 'start' })
+  window.scrollTo({ top: 0, behavior: 'auto' })
+}
+
 async function scrollReaderToRatio(scrollRatio: number) {
   await nextTick()
   await new Promise<void>((resolve) => {
@@ -255,6 +301,82 @@ function clampPageIndex(value: number) {
 function setPageIndex(value: number, immediateSave = true) {
   pageIndex.value = clampPageIndex(value)
   if (immediateSave) saveCurrentPosition(true)
+  prepareAdjacentPages()
+}
+
+function pageTurnFlowStyle(pane: PageTurnSnapshot) {
+  return {
+    transform: `translateX(-${pane.pageIndex * pageDistance.value}px)`
+  }
+}
+
+async function measureRenderedCrossPanePageCount(chapterId: number) {
+  await nextTick()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  const flow = pageViewportRef.value?.querySelector<HTMLElement>(`.reader-cross-page-flow[data-chapter-id="${chapterId}"]`)
+  if (!flow || !pageDistance.value) return 1
+  return Math.max(1, Math.round((flow.scrollWidth + readerPageGap) / pageDistance.value))
+}
+
+async function playCrossChapterPageTurn(initialOffset: number, finalOffset: number) {
+  const track = crossChapterTrackRef.value
+  if (!track) {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, crossChapterAnimationDurationMs))
+    return
+  }
+
+  const from = `translateX(${initialOffset}px)`
+  const to = `translateX(${finalOffset}px)`
+  track.style.transform = from
+  track.getBoundingClientRect()
+
+  const animation = track.animate([{ transform: from }, { transform: to }], {
+    duration: crossChapterAnimationDurationMs,
+    easing: 'ease',
+    fill: 'forwards'
+  })
+
+  try {
+    await animation.finished
+  } catch {
+    // The element may be detached during route changes or mode switches.
+  }
+}
+
+function clearPreparedAdjacentPages() {
+  preparedAdjacentPages.value = { prev: null, next: null }
+}
+
+async function prepareAdjacentPage(direction: 'prev' | 'next') {
+  if (!isPageMode.value || !reader.activeChapterId || !activeContent.value || !pageWidth.value || !pageHeight.value) return
+
+  const currentIndex = chapterIndexById(reader.activeChapterId)
+  const targetIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1
+  const targetChapter = readableChapters.value[targetIndex]
+  if (!targetChapter) return
+
+  const currentPrepared = preparedAdjacentPages.value[direction]
+  if (currentPrepared?.chapterId === targetChapter.id) return
+
+  const targetContent = await reader.loadChapterContent(bookId, targetChapter.id)
+  if (reader.activeChapterId !== readableChapters.value[currentIndex]?.id || !isPageMode.value) return
+  preparedAdjacentPages.value = {
+    ...preparedAdjacentPages.value,
+    [direction]: {
+      chapterId: targetChapter.id,
+      content: targetContent,
+      pageCount: 1
+    }
+  }
+}
+
+function prepareAdjacentPages() {
+  if (!isPageMode.value || crossChapterPageTurn.value) return
+  const currentIndex = chapterIndexById(reader.activeChapterId)
+  if (currentIndex < 0) return
+  // 立即预加载前后章节，不等用户翻到一半
+  prepareAdjacentPage('next')
+  prepareAdjacentPage('prev')
 }
 
 async function recalculatePages(targetRatio: number | null = null) {
@@ -278,6 +400,10 @@ async function recalculatePages(targetRatio: number | null = null) {
   const width = Math.max(1, viewport.clientWidth - horizontalPadding)
   const height = Math.max(1, viewport.clientHeight - verticalPadding)
   pageWidth.value = width
+  pageHeight.value = height
+  viewport.style.setProperty('--reader-page-width', `${width}px`)
+  viewport.style.setProperty('--reader-page-height', `${height}px`)
+  viewport.style.setProperty('--reader-page-gap', `${readerPageGap}px`)
   flow.style.setProperty('--reader-page-width', `${width}px`)
   flow.style.setProperty('--reader-page-height', `${height}px`)
   flow.style.setProperty('--reader-page-gap', `${readerPageGap}px`)
@@ -306,6 +432,7 @@ async function recalculatePages(targetRatio: number | null = null) {
   const ratio = targetRatio ?? currentReadingRatio()
   pageCount.value = nextCount
   pageIndex.value = Math.max(0, Math.min(nextCount - 1, Math.round(clampScrollRatio(ratio) * (nextCount - 1))))
+  prepareAdjacentPages()
 }
 
 function schedulePageRecalculation(targetRatio: number | null = null) {
@@ -324,10 +451,11 @@ function prevPageOrChapter() {
     return
   }
   if (pageIndex.value > 0) {
+    prepareAdjacentPages()
     setPageIndex(pageIndex.value - 1)
     return
   }
-  prevChapter({ restoreScrollRatio: 1 })
+  turnToAdjacentChapterPage('prev')
 }
 
 function nextPageOrChapter() {
@@ -336,10 +464,11 @@ function nextPageOrChapter() {
     return
   }
   if (pageIndex.value < pageCount.value - 1) {
+    prepareAdjacentPages()
     setPageIndex(pageIndex.value + 1)
     return
   }
-  nextChapter({ restoreScrollRatio: 0 })
+  turnToAdjacentChapterPage('next')
 }
 
 function handleReaderScroll() {
@@ -369,6 +498,7 @@ async function loadChapter(chapterId: number, options: { resetScroll?: boolean; 
   const chapter = fallbackReadableChapterFrom(chapterId)
   if (!chapter) return
   pageRecalculationToken += 1
+  clearPreparedAdjacentPages()
   reader.activeChapterId = chapter.id
   const content = await reader.loadChapterContent(bookId, chapter.id)
   activeContentType.value = content.content_type
@@ -383,6 +513,89 @@ async function loadChapter(chapterId: number, options: { resetScroll?: boolean; 
     await scrollReaderToTop()
   }
   if (saveProgress) saveCurrentPosition(true)
+}
+
+async function turnToAdjacentChapterPage(direction: 'prev' | 'next') {
+  if (crossChapterPageTurn.value || !isPageMode.value || !reader.activeChapterId || !activeContent.value) return
+
+  const currentIndex = chapterIndexById(reader.activeChapterId)
+  const targetIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1
+  const currentChapter = activeChapter.value
+  const targetChapter = readableChapters.value[targetIndex]
+  if (!currentChapter || !targetChapter) return
+
+  if (!pageWidth.value || !pageHeight.value) {
+    await recalculatePages(currentReadingRatio())
+  }
+
+  let prepared = preparedAdjacentPages.value[direction]
+  if (prepared?.chapterId !== targetChapter.id) {
+    const targetContent = await reader.loadChapterContent(bookId, targetChapter.id)
+    prepared = {
+      chapterId: targetChapter.id,
+      content: targetContent,
+      pageCount: 1
+    }
+  }
+  const targetContent = prepared.content
+  let targetPageCount = prepared.pageCount
+  let targetPageIndex = direction === 'next' ? 0 : targetPageCount - 1
+  const initialOffset = direction === 'next' ? 0 : -pageDistance.value
+  const finalOffset = direction === 'next' ? -pageDistance.value : 0
+
+  crossChapterPageTurn.value = {
+    direction,
+    current: {
+      chapterId: currentChapter.id,
+      chapterTitle: currentChapter.title,
+      contentType: activeContentType.value,
+      content: activeContent.value,
+      pageIndex: pageIndex.value,
+      pageCount: pageCount.value
+    },
+    target: {
+      chapterId: targetChapter.id,
+      chapterTitle: targetChapter.title,
+      contentType: targetContent.content_type,
+      content: targetContent.content,
+      pageIndex: targetPageIndex,
+      pageCount: targetPageCount
+    },
+    offset: initialOffset
+  }
+
+  await nextTick()
+  targetPageCount = await measureRenderedCrossPanePageCount(targetChapter.id)
+  targetPageIndex = direction === 'next' ? 0 : targetPageCount - 1
+  if (crossChapterPageTurn.value) {
+    crossChapterPageTurn.value.target.pageCount = targetPageCount
+    crossChapterPageTurn.value.target.pageIndex = targetPageIndex
+  }
+  await nextTick()
+  await playCrossChapterPageTurn(initialOffset, finalOffset)
+  if (!crossChapterPageTurn.value) return
+  crossChapterPageTurn.value.offset = finalOffset
+  const targetRatio = targetPageCount <= 1 ? 0 : targetPageIndex / (targetPageCount - 1)
+
+  pageRecalculationToken += 1
+  clearPreparedAdjacentPages()
+  settlingCrossChapterPageTurn.value = true
+  reader.activeChapterId = targetChapter.id
+  activeContentType.value = targetContent.content_type
+  activeContent.value = targetContent.content
+  pageCount.value = targetPageCount
+  pageIndex.value = targetPageIndex
+  await nextTick()
+  await scrollReaderViewportToTop()
+  await recalculatePages(targetRatio)
+  const settledTargetPageIndex = direction === 'next' ? 0 : Math.max(pageCount.value - 1, 0)
+  pageIndex.value = settledTargetPageIndex
+  crossChapterPageTurn.value = null
+  await nextTick()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  settlingCrossChapterPageTurn.value = false
+  prepareAdjacentPages()
+  saveCurrentPosition(true)
 }
 
 onMounted(async () => {
@@ -430,10 +643,12 @@ watch(
     if (mode === 'page') {
       await scrollReaderToTop()
       await recalculatePages(ratio)
+      prepareAdjacentPages()
       schedulePageRecalculation(ratio)
     } else {
       pageCount.value = 1
       pageIndex.value = 0
+      crossChapterPageTurn.value = null
       if (previousMode === 'page') await scrollReaderToRatio(ratio)
     }
   }
@@ -449,6 +664,10 @@ watch(
     if (chapterDrawer.value) scrollActiveChapterIntoView()
   }
 )
+
+watch([pageIndex, pageCount, isPageMode], () => {
+  prepareAdjacentPages()
+})
 </script>
 
 <template>
@@ -456,13 +675,22 @@ watch(
     <section v-if="reader.bookMeta" class="page reader-page" :class="{ 'is-page-mode': isPageMode }">
       <section ref="readerTopRef" class="reader-panel surface" :class="{ 'is-fluid': settings.reader.content_width <= 0, 'is-page-mode': isPageMode }">
         <div v-if="activeContent" ref="pageViewportRef" class="reader-page-viewport">
-          <div ref="pageFlowRef" class="reader-page-flow" :style="pageFlowStyle" @load.capture="handleReaderAssetLoad">
+          <div ref="pageFlowRef" class="reader-page-flow" :class="{ 'is-turning': crossChapterPageTurn, 'is-settling-cross-turn': settlingCrossChapterPageTurn }" :style="pageFlowStyle" @load.capture="handleReaderAssetLoad">
             <h2 v-if="activeChapter && activeContentType !== 'html'" class="reader-chapter-title">{{ activeChapter.title }}</h2>
             <div v-if="activeContentType === 'html'" class="reader-content" v-html="activeContent" />
             <div v-else class="reader-content reader-content-text" v-text="activeContent" />
           </div>
+          <div v-if="crossChapterPageTurn" ref="crossChapterTrackRef" class="reader-cross-page-track" :style="crossChapterTrackStyle">
+            <div v-for="pane in crossChapterPanes" :key="pane.chapterId" class="reader-cross-page-pane">
+              <div class="reader-page-flow reader-cross-page-flow" :data-chapter-id="pane.chapterId" :style="pageTurnFlowStyle(pane)">
+                <h2 v-if="pane.contentType !== 'html'" class="reader-chapter-title">{{ pane.chapterTitle }}</h2>
+                <div v-if="pane.contentType === 'html'" class="reader-content" v-html="pane.content" />
+                <div v-else class="reader-content reader-content-text" v-text="pane.content" />
+              </div>
+            </div>
+          </div>
         </div>
-        <div v-if="activeContent && isPageMode" class="reader-page-indicator">{{ pageIndex + 1 }} / {{ pageCount }}</div>
+        <div v-if="activeContent && isPageMode && !crossChapterPageTurn" class="reader-page-indicator">{{ pageIndex + 1 }} / {{ pageCount }}</div>
         <div v-if="activeContent" class="reader-tap-zones">
           <button type="button" class="reader-tap-zone" :aria-label="isPageMode ? '点击左侧切换上一页' : '点击左侧切换上一章'" :disabled="!isPageMode && chapterIndexById(reader.activeChapterId) <= 0 && !readerMenuOpen" @click="handleReaderTap(prevPageOrChapter)" />
           <button type="button" class="reader-tap-zone" aria-label="点击中间打开或关闭阅读菜单" @click="handleReaderTap(openReaderMenu)" />
@@ -638,6 +866,7 @@ watch(
 }
 
 .reader-page-viewport {
+  position: relative;
   max-width: 100%;
 }
 
@@ -659,6 +888,36 @@ watch(
   column-gap: var(--reader-page-gap, 32px);
   transition: transform 0.16s ease;
   will-change: transform;
+}
+
+.reader-panel.is-page-mode .reader-page-flow.is-turning {
+  visibility: hidden;
+}
+
+.reader-panel.is-page-mode .reader-page-flow.is-settling-cross-turn {
+  transition: none;
+}
+
+.reader-cross-page-track {
+  position: absolute;
+  inset: 24px;
+  z-index: 2;
+  display: flex;
+  gap: var(--reader-page-gap, 32px);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.reader-cross-page-pane {
+  position: relative;
+  width: var(--reader-page-width, 100%);
+  height: var(--reader-page-height, 100%);
+  flex: 0 0 var(--reader-page-width, 100%);
+  overflow: hidden;
+}
+
+.reader-panel.is-page-mode .reader-cross-page-flow {
+  transition: none;
 }
 
 .reader-panel.is-page-mode .reader-content {

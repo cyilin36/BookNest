@@ -6,6 +6,7 @@ import type { UploadBookRequest } from '@/api/types'
 function toFormData(payload: UploadBookRequest) {
   const form = new FormData()
   form.append('file', payload.file)
+  if (payload.cover) form.append('cover', payload.cover)
   if (payload.title) form.append('title', payload.title)
   if (payload.author) form.append('author', payload.author)
   if (payload.description) form.append('description', payload.description)

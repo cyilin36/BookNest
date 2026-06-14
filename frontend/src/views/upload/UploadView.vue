@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useRoute, useRouter } from 'vue-router'
 import { CloudUpload, Library, LockKeyhole } from 'lucide-vue-next'
+import CoverUploadField from '@/components/book/CoverUploadField.vue'
 import PageShell from '@/components/common/PageShell.vue'
 import { useUpload } from '@/composables/useUpload'
 import { useTaxonomyOptions } from '@/composables/useTaxonomyOptions'
@@ -16,6 +17,7 @@ const { uploading, uploadPrivate, uploadPublic } = useUpload()
 const { categoryOptions, tagOptions, loading: taxonomyLoading } = useTaxonomyOptions()
 const target = ref(route.query.target === 'public' ? 'public' : 'private')
 const file = ref<File | null>(null)
+const cover = ref<File | null>(null)
 const form = reactive({ title: '', author: '', description: '', category_ids: [] as number[], tag_ids: [] as number[] })
 const dragActive = ref(false)
 
@@ -33,6 +35,7 @@ async function submit() {
   try {
     const payload = {
       file: file.value,
+      cover: cover.value,
       title: form.title || undefined,
       author: form.author || undefined,
       description: form.description || undefined,
@@ -83,6 +86,9 @@ async function submit() {
       </n-form-item>
       <n-form-item label="简介">
         <n-input v-model:value="form.description" type="textarea" placeholder="可选" />
+      </n-form-item>
+      <n-form-item label="封面">
+        <CoverUploadField v-model:file="cover" :disabled="uploading" />
       </n-form-item>
       <n-form-item label="分类">
         <n-select v-model:value="form.category_ids" multiple clearable :loading="taxonomyLoading" :options="categoryOptions" placeholder="可选" />

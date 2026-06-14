@@ -99,6 +99,37 @@ func (s *Local) SaveCoverBytes(data []byte, bookID int64, ext string) (string, s
 	return rel, abs, nil
 }
 
+func (s *Local) SaveCoverFile(file multipart.File, ownerType string, ownerID int64, ext string) (string, string, error) {
+	if strings.TrimSpace(ext) == "" {
+		ext = ".jpg"
+	}
+	rel := filepath.Join(ownerType, fmt.Sprintf("%d", ownerID), "cover-"+uuid.NewString()+ext)
+	abs := filepath.Join(s.cfg.CoversDir, rel)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return "", "", err
+	}
+	tmpPath := filepath.Join(s.cfg.TempDir, uuid.NewString()+".cover")
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		return "", "", err
+	}
+	_, copyErr := io.Copy(out, file)
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", "", copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", "", closeErr
+	}
+	if err := moveFile(tmpPath, abs); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", "", err
+	}
+	return rel, abs, nil
+}
+
 func (s *Local) SaveSiteIcon(file multipart.File, ext string) (string, error) {
 	if strings.TrimSpace(ext) == "" {
 		ext = ".png"

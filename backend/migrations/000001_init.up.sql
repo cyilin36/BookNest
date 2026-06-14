@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS bookshelves (
   personal_title VARCHAR(512),
   personal_author VARCHAR(512),
   personal_description TEXT,
+  personal_cover_path TEXT,
   personal_category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL,
   added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_read_at TIMESTAMPTZ,
