@@ -1,6 +1,6 @@
 services:
   # PostgreSQL 数据库：保存用户、图书元数据、书架记录、阅读进度和系统设置。
-  postgres:
+  booknest-postgres:
     image: postgres:17-alpine
     container_name: booknest-postgres
     restart: unless-stopped
@@ -20,31 +20,29 @@ services:
       retries: 20
 
   # BookNest 主服务：同一个容器内运行 Go API 服务，并托管构建后的 Vue 前端。
-  app:
-    # 默认使用 GitHub Container Registry 上发布的镜像。
-    image: ghcr.io/cyilin36/booknest:latest
+  booknest:
     build:
-      # 如需自建镜像，执行：docker compose up --build -d
+      # 从当前整合后的项目根目录构建镜像。
       context: .
       dockerfile: Dockerfile
+    image: ghcr.io/cyilin36/booknest:latest
     container_name: booknest
     restart: unless-stopped
     depends_on:
       # 等 PostgreSQL 健康检查通过后，再启动应用迁移和 HTTP 服务。
-      postgres:
+      booknest-postgres:
         condition: service_healthy
     environment:
       APP_ENV: production
       HTTP_ADDR: :8080
       # Compose 内部网络里的数据库连接地址，对应上方 postgres 服务。
-      DATABASE_DSN: postgres://booknest:booknest_password@postgres:5432/booknest?sslmode=disable
+      DATABASE_DSN: postgres://booknest:booknest_password@booknest-postgres:5432/booknest?sslmode=disable
       # 生产环境必须替换为强随机密钥。
       JWT_SECRET: change-this-secret-before-production
       # 上传的书籍、封面和临时文件在容器内保存到这个目录。
       DATA_DIR: /data
       BOOKS_DIR: /data/books
       COVERS_DIR: /data/covers
-      ASSETS_DIR: /data/assets
       TEMP_DIR: /data/temp
       # 前端构建产物目录，必须与 Dockerfile 中复制 dist 的位置一致。
       FRONTEND_DIST_DIR: /app/frontend/dist

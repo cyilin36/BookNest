@@ -33,12 +33,14 @@ const pageCount = ref(1)
 const pageWidth = ref(0)
 const pageHeight = ref(0)
 const settlingCrossChapterPageTurn = ref(false)
+const resolvingPagePosition = ref(false)
 const isRestoringPosition = ref(false)
 const ignoreNextScrollMenuClose = ref(false)
 const chapterItemRefs = new Map<number, HTMLElement>()
 const readerPageGap = 32
 const crossChapterAnimationDurationMs = 260
 let pageRecalculationToken = 0
+let pagePositionResolutionToken = 0
 
 interface SavedReaderPosition {
   chapterId: number
@@ -486,6 +488,7 @@ function handleReaderResize() {
 }
 
 function handleReaderAssetLoad() {
+  if (resolvingPagePosition.value) return
   if (isPageMode.value) recalculatePages(currentReadingRatio())
 }
 
@@ -497,20 +500,29 @@ async function loadChapter(chapterId: number, options: { resetScroll?: boolean; 
   const { resetScroll = true, restoreScrollRatio = null, saveProgress = true } = options
   const chapter = fallbackReadableChapterFrom(chapterId)
   if (!chapter) return
+  const shouldResolvePagePositionSilently = isPageMode.value && restoreScrollRatio !== null
+  const resolutionToken = shouldResolvePagePositionSilently ? ++pagePositionResolutionToken : 0
+  if (shouldResolvePagePositionSilently) resolvingPagePosition.value = true
   pageRecalculationToken += 1
   clearPreparedAdjacentPages()
   reader.activeChapterId = chapter.id
-  const content = await reader.loadChapterContent(bookId, chapter.id)
-  activeContentType.value = content.content_type
-  activeContent.value = content.content
-  if (isPageMode.value) {
-    await scrollReaderToTop()
-    await recalculatePages(restoreScrollRatio ?? 0)
-    schedulePageRecalculation(restoreScrollRatio ?? 0)
-  } else if (restoreScrollRatio !== null) {
-    await scrollReaderToRatio(restoreScrollRatio)
-  } else if (resetScroll) {
-    await scrollReaderToTop()
+  try {
+    const content = await reader.loadChapterContent(bookId, chapter.id)
+    activeContentType.value = content.content_type
+    activeContent.value = content.content
+    if (isPageMode.value) {
+      await scrollReaderToTop()
+      await recalculatePages(restoreScrollRatio ?? 0)
+      await nextTick()
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      schedulePageRecalculation(restoreScrollRatio ?? 0)
+    } else if (restoreScrollRatio !== null) {
+      await scrollReaderToRatio(restoreScrollRatio)
+    } else if (resetScroll) {
+      await scrollReaderToTop()
+    }
+  } finally {
+    if (shouldResolvePagePositionSilently && resolutionToken === pagePositionResolutionToken) resolvingPagePosition.value = false
   }
   if (saveProgress) saveCurrentPosition(true)
 }
@@ -674,8 +686,14 @@ watch([pageIndex, pageCount, isPageMode], () => {
   <main class="reader-shell">
     <section v-if="reader.bookMeta" class="page reader-page" :class="{ 'is-page-mode': isPageMode }">
       <section ref="readerTopRef" class="reader-panel surface" :class="{ 'is-fluid': settings.reader.content_width <= 0, 'is-page-mode': isPageMode }">
-        <div v-if="activeContent" ref="pageViewportRef" class="reader-page-viewport">
-          <div ref="pageFlowRef" class="reader-page-flow" :class="{ 'is-turning': crossChapterPageTurn, 'is-settling-cross-turn': settlingCrossChapterPageTurn }" :style="pageFlowStyle" @load.capture="handleReaderAssetLoad">
+        <div v-if="activeContent" ref="pageViewportRef" class="reader-page-viewport" :class="{ 'is-resolving-page-position': resolvingPagePosition }">
+          <div
+            ref="pageFlowRef"
+            class="reader-page-flow"
+            :class="{ 'is-turning': crossChapterPageTurn, 'is-settling-cross-turn': settlingCrossChapterPageTurn, 'is-resolving-page-position': resolvingPagePosition }"
+            :style="pageFlowStyle"
+            @load.capture="handleReaderAssetLoad"
+          >
             <h2 v-if="activeChapter && activeContentType !== 'html'" class="reader-chapter-title">{{ activeChapter.title }}</h2>
             <div v-if="activeContentType === 'html'" class="reader-content" v-html="activeContent" />
             <div v-else class="reader-content reader-content-text" v-text="activeContent" />
@@ -690,8 +708,8 @@ watch([pageIndex, pageCount, isPageMode], () => {
             </div>
           </div>
         </div>
-        <div v-if="activeContent && isPageMode && !crossChapterPageTurn" class="reader-page-indicator">{{ pageIndex + 1 }} / {{ pageCount }}</div>
-        <div v-if="activeContent" class="reader-tap-zones">
+        <div v-if="activeContent && isPageMode && !crossChapterPageTurn && !resolvingPagePosition" class="reader-page-indicator">{{ pageIndex + 1 }} / {{ pageCount }}</div>
+        <div v-if="activeContent && !resolvingPagePosition" class="reader-tap-zones">
           <button type="button" class="reader-tap-zone" :aria-label="isPageMode ? '点击左侧切换上一页' : '点击左侧切换上一章'" :disabled="!isPageMode && chapterIndexById(reader.activeChapterId) <= 0 && !readerMenuOpen" @click="handleReaderTap(prevPageOrChapter)" />
           <button type="button" class="reader-tap-zone" aria-label="点击中间打开或关闭阅读菜单" @click="handleReaderTap(openReaderMenu)" />
           <button
@@ -706,7 +724,7 @@ watch([pageIndex, pageCount, isPageMode], () => {
           <n-button secondary @click="reader.loadChapters(bookId)">重试</n-button>
         </EmptyState>
       </section>
-      <div class="reader-bottom toolbar" :class="{ 'is-fluid': settings.reader.content_width <= 0 }">
+      <div v-if="!isPageMode" class="reader-bottom toolbar" :class="{ 'is-fluid': settings.reader.content_width <= 0 }">
         <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="prevChapterFromStart()">
           <template #icon><ChevronLeft :size="16" /></template>
           上一章
@@ -832,6 +850,8 @@ watch([pageIndex, pageCount, isPageMode], () => {
 .reader-page.is-page-mode {
   height: 100vh;
   min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
   overflow: hidden;
 }
 
@@ -860,7 +880,7 @@ watch([pageIndex, pageCount, isPageMode], () => {
 }
 
 .reader-panel.is-page-mode {
-  height: auto;
+  height: 100%;
   min-height: 0;
   padding: 0;
 }
@@ -875,6 +895,10 @@ watch([pageIndex, pageCount, isPageMode], () => {
   overflow: hidden;
   padding: 24px;
   box-sizing: border-box;
+}
+
+.reader-page-viewport.is-resolving-page-position {
+  visibility: hidden;
 }
 
 .reader-page-flow {
@@ -895,6 +919,10 @@ watch([pageIndex, pageCount, isPageMode], () => {
 }
 
 .reader-panel.is-page-mode .reader-page-flow.is-settling-cross-turn {
+  transition: none;
+}
+
+.reader-panel.is-page-mode .reader-page-flow.is-resolving-page-position {
   transition: none;
 }
 
