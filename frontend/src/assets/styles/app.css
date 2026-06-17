@@ -1,6 +1,8 @@
 @import './variables.css';
 @import './reader.css';
 
+/* ==================== Base Reset ==================== */
+
 * {
   box-sizing: border-box;
 }
@@ -15,7 +17,11 @@ body,
 body {
   color: var(--color-text-main);
   background: var(--color-bg-page);
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 a {
@@ -23,69 +29,147 @@ a {
   text-decoration: none;
 }
 
+/* ==================== Layout ==================== */
+
+.container {
+  max-width: var(--container-max-width);
+  margin: 0 auto;
+  padding: var(--spacing-4xl) var(--padding-page) var(--spacing-7xl);
+}
+
 .page {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--spacing-section);
 }
+
+/* ==================== Page Header ==================== */
 
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--spacing-2xl);
 }
 
 .page-title {
   margin: 0;
-  font-size: 28px;
-  line-height: 1.2;
-  letter-spacing: 0;
+  font-size: var(--font-size-5xl);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tighter);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-main);
 }
 
 .page-subtitle {
-  margin: 6px 0 0;
+  margin: var(--spacing-sm) 0 0;
+  font-size: var(--font-size-md);
   color: var(--color-text-sec);
+  line-height: var(--line-height-normal);
 }
+
+/* ==================== Surface & Cards ==================== */
 
 .surface {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-light);
 }
+
+/* ==================== Toolbar ==================== */
 
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: var(--spacing-md);
 }
+
+/* ==================== Book Grid ==================== */
 
 .grid-books {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 28px 20px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--book-card-min-width), 1fr));
+  gap: var(--spacing-grid-v) var(--spacing-grid-h);
 }
+
+/* ==================== Typography Utilities ==================== */
 
 .muted {
   color: var(--color-text-sec);
 }
 
 .danger-text {
-  color: #d03050;
+  color: var(--color-error);
 }
 
-@media (max-width: 720px) {
-  .page-title {
-    font-size: 24px;
+/* ==================== Focus Styles (Accessibility) ==================== */
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-xsmall);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--color-primary-light);
+}
+
+/* ==================== Shadow Utilities ==================== */
+
+.shadow-light {
+  box-shadow: var(--shadow-light);
+}
+
+.shadow-medium {
+  box-shadow: var(--shadow-medium);
+}
+
+.shadow-heavy {
+  box-shadow: var(--shadow-heavy);
+}
+
+/* ==================== Animation Utilities ==================== */
+
+.lift-hover {
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.lift-hover:hover {
+  transform: translateY(-2px);
+}
+
+/* ==================== Responsive ==================== */
+
+@media (max-width: 768px) {
+  .container {
+    padding: var(--spacing-2xl) var(--padding-page-mobile) var(--spacing-6xl);
   }
 
   .page-header {
-    flex-direction: column;
+    gap: var(--spacing-lg);
+  }
+
+  .page-title {
+    font-size: var(--font-size-3xl);
   }
 
   .grid-books {
-    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-    gap: 22px 12px;
+    grid-template-columns: repeat(auto-fill, minmax(var(--book-card-min-width-mobile), 1fr));
+    gap: var(--spacing-2xl) var(--spacing-lg);
+  }
+}
+
+@media (max-width: 520px) {
+  .container {
+    padding: var(--spacing-2xl) var(--padding-page-mobile) var(--spacing-6xl);
+  }
+
+  .page-title {
+    font-size: var(--font-size-3xl);
   }
 }

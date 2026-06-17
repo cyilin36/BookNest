@@ -16,10 +16,47 @@ onMounted(() => {
 const naiveTheme = computed(() => (settings.reader.theme === 'dark' ? darkTheme : null))
 const themeOverrides = computed<GlobalThemeOverrides>(() => ({
   common: {
-    primaryColor: settings.reader.theme === 'sepia' ? '#8b5a2b' : settings.reader.theme === 'dark' ? '#10b981' : '#18a058',
-    primaryColorHover: settings.reader.theme === 'sepia' ? '#a06d3b' : settings.reader.theme === 'dark' ? '#34d399' : '#36ad6a',
-    borderRadius: '8px',
-    fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    primaryColor: settings.reader.theme === 'sepia' ? '#8B5A2B' : settings.reader.theme === 'dark' ? '#10B981' : '#4A90E2',
+    primaryColorHover: settings.reader.theme === 'sepia' ? '#A06D3B' : settings.reader.theme === 'dark' ? '#34D399' : '#3A7BC8',
+    primaryColorPressed: settings.reader.theme === 'sepia' ? '#7B4A1B' : settings.reader.theme === 'dark' ? '#059669' : '#2A6BB8',
+    primaryColorSuppl: settings.reader.theme === 'sepia' ? 'rgba(139, 90, 43, 0.1)' : settings.reader.theme === 'dark' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(74, 144, 226, 0.1)',
+    borderRadius: '12px',
+    borderRadiusSmall: '8px',
+    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+    heightMedium: '44px',
+    heightSmall: '32px',
+    fontSize: '14px',
+    fontSizeMedium: '15px',
+    lineHeight: '1.6'
+  },
+  Button: {
+    borderRadiusMedium: '10px',
+    borderRadiusSmall: '8px',
+    heightMedium: '44px',
+    heightSmall: '32px',
+    paddingMedium: '0 20px',
+    paddingSmall: '0 14px',
+    fontSizeMedium: '15px',
+    fontSizeSmall: '13px',
+    fontWeightStrong: '500'
+  },
+  Input: {
+    borderRadius: '12px',
+    heightMedium: '44px',
+    heightSmall: '36px',
+    heightLarge: '52px',
+    fontSizeMedium: '16px',
+    paddingMedium: '0 20px'
+  },
+  Select: {
+    borderRadius: '12px',
+    heightMedium: '44px'
+  },
+  Card: {
+    borderRadius: '12px'
+  },
+  Drawer: {
+    borderRadius: '0px'
   }
 }))
 </script>

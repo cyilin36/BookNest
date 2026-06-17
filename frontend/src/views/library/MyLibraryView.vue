@@ -146,7 +146,7 @@ onMounted(() => fetchPage())
       </n-tooltip>
       <n-tooltip trigger="hover">
         <template #trigger>
-          <n-button secondary circle title="上传公共图书" @click="router.push('/upload?target=public')">
+          <n-button type="primary" circle title="上传公共图书" @click="router.push('/upload?target=public')">
             <Plus :size="18" />
           </n-button>
         </template>
@@ -154,15 +154,27 @@ onMounted(() => fetchPage())
       </n-tooltip>
     </template>
 
-    <n-radio-group v-model:value="filters.status" size="small" @update:value="fetchPage(1)">
-      <n-radio-button v-for="option in statusOptions" :key="option.value" :value="option.value">
-        {{ option.label }}
-      </n-radio-button>
-    </n-radio-group>
+    <div class="filter-bar">
+      <n-radio-group v-model:value="filters.status" size="large" @update:value="fetchPage(1)">
+        <n-radio-button v-for="option in statusOptions" :key="option.value" :value="option.value">
+          {{ option.label }}
+        </n-radio-button>
+      </n-radio-group>
+    </div>
 
     <n-spin :show="loading">
-      <EmptyState v-if="!books.length && !loading" title="还没有公共图书" description="上传公共图书后，可以在这里管理上架和下架。" />
-      <div v-else class="grid-books my-library-grid">
+      <EmptyState
+        v-if="!books.length && !loading"
+        title="还没有公共图书"
+        description="上传公共图书后，可以在这里管理上架和下架。"
+      >
+        <n-button type="primary" @click="router.push('/upload?target=public')">
+          <template #icon><Plus :size="18" /></template>
+          上传公共图书
+        </n-button>
+      </EmptyState>
+
+      <div v-else class="my-library-grid">
         <article v-for="book in books" :key="book.id" class="own-book-card surface">
           <button class="cover-button" type="button" @click="router.push(`/library/${book.id}`)">
             <BookCover :src="book.cover_url" :title="book.title" :revision="coverRevisions[book.id] || 0" />
@@ -171,12 +183,13 @@ onMounted(() => fetchPage())
             <BookTitle class="book-title" :title="book.title" @click="router.push(`/library/${book.id}`)" />
             <div class="book-author">{{ book.author || '未知作者' }}</div>
             <div class="own-book-actions">
-              <n-tag size="small" :type="book.library_status === 'approved' ? 'success' : 'warning'" round>
+              <n-tag size="small" :type="book.library_status === 'approved' ? 'success' : 'warning'" round :bordered="false">
                 {{ book.library_status === 'approved' ? '已上架' : '已下架' }}
               </n-tag>
               <n-tooltip trigger="hover">
                 <template #trigger>
                   <n-button
+                    class="action-button"
                     size="small"
                     secondary
                     circle
@@ -192,7 +205,6 @@ onMounted(() => fetchPage())
               <n-button
                 class="status-button"
                 size="small"
-                secondary
                 :type="book.library_status === 'approved' ? 'warning' : 'primary'"
                 :loading="statusChangingId === book.id"
                 @click="confirmStatusChange(book)"
@@ -205,13 +217,12 @@ onMounted(() => fetchPage())
               </n-button>
               <n-tooltip trigger="hover">
                 <template #trigger>
-                  <n-button size="small" secondary circle @click="editingBook = book">
+                  <n-button class="action-button" size="small" secondary circle @click="editingBook = book">
                     <Pencil :size="15" />
                   </n-button>
                 </template>
                 编辑信息
               </n-tooltip>
-              <n-button size="small" secondary @click="router.push(`/library/${book.id}`)">详情</n-button>
             </div>
           </div>
         </article>
@@ -239,16 +250,40 @@ onMounted(() => fetchPage())
   align-items: center;
 }
 
+.filter-bar {
+  margin-bottom: var(--spacing-2xl);
+}
+
+.filter-bar :deep(.n-radio-group) {
+  background: var(--color-bg-card);
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-light);
+}
+
+.filter-bar :deep(.n-radio-button) {
+  transition: all var(--transition-base);
+}
+
 .my-library-grid {
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-2xl);
 }
 
 .own-book-card {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  gap: 12px;
-  min-height: 142px;
-  padding: 12px;
+  grid-template-columns: 100px 1fr;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-xl);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-light);
+  transition: all var(--transition-base);
+}
+
+.own-book-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-medium);
 }
 
 .cover-button {
@@ -260,25 +295,40 @@ onMounted(() => fetchPage())
   cursor: pointer;
 }
 
+.cover-button :deep(.book-cover) {
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-light);
+  transition: all var(--transition-base);
+}
+
+.cover-button:hover :deep(.book-cover) {
+  box-shadow: var(--shadow-medium);
+}
+
 .own-book-info {
   display: flex;
-  min-width: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
+  min-width: 0;
 }
 
 .book-title {
-  --book-title-height: 42px;
-  --book-title-font-size: 15px;
-  --book-title-font-weight: 700;
-  --book-title-line-height: 21px;
-  --book-title-text-align: center;
+  --book-title-height: auto;
+  --book-title-font-size: var(--font-size-md);
+  --book-title-font-weight: var(--font-weight-semibold);
+  --book-title-line-height: var(--line-height-tight);
+  --book-title-text-align: left;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .book-author {
-  overflow: hidden;
+  font-size: var(--font-size-sm);
   color: var(--color-text-sec);
-  text-align: center;
+  line-height: var(--line-height-normal);
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -287,21 +337,40 @@ onMounted(() => fetchPage())
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   margin-top: auto;
 }
 
+.action-button,
 .status-button {
-  font-weight: 700;
+  transition: all var(--transition-base);
 }
 
-@media (max-width: 720px) {
+.action-button:hover:not(:disabled),
+.status-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.status-button {
+  font-weight: var(--font-weight-semibold);
+}
+
+@media (max-width: 768px) {
   .my-library-page :deep(.page-header) {
     flex-direction: row;
   }
 
   .my-library-page :deep(.toolbar) {
     margin-left: auto;
+  }
+
+  .my-library-grid {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-xl);
+  }
+
+  .own-book-card {
+    padding: var(--spacing-lg);
   }
 }
 </style>

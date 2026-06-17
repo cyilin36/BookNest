@@ -26,29 +26,58 @@ const system = useSystemStore()
   display: grid;
   min-height: 100vh;
   place-items: center;
-  padding: 24px;
-  background: var(--color-bg-page);
+  padding: var(--spacing-3xl);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .auth-panel {
-  width: min(440px, 100%);
-  padding: 28px;
+  width: min(480px, 100%);
+  padding: var(--spacing-4xl);
+  background: var(--color-bg-card);
+  border-radius: var(--radius-xlarge);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 24px;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-3xl);
+  padding-bottom: var(--spacing-2xl);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-main);
+  letter-spacing: -0.02em;
 }
 
 .brand p {
-  margin: 4px 0 0;
+  margin: var(--spacing-xs) 0 0;
+  font-size: var(--font-size-sm);
   color: var(--color-text-sec);
+  line-height: var(--line-height-tight);
+}
+
+@media (max-width: 520px) {
+  .auth-layout {
+    padding: var(--spacing-xl);
+  }
+
+  .auth-panel {
+    padding: var(--spacing-2xl);
+  }
+
+  .brand {
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-2xl);
+  }
+
+  .brand h1 {
+    font-size: var(--font-size-xl);
+  }
 }
 </style>

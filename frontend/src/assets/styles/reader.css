@@ -1,15 +1,19 @@
+/* ==================== Reader Styles ==================== */
+
 .reader-shell {
   min-height: 100vh;
-  background: var(--color-bg-page);
-  color: var(--color-text-main);
+  background: var(--reader-bg);
+  color: var(--reader-text);
 }
 
 .reader-content {
-  max-width: 100%;
+  max-width: var(--reader-max-width);
+  margin: 0 auto;
+  padding: var(--spacing-7xl) var(--spacing-3xl) 120px;
   overflow-x: hidden;
-  font-family: var(--font-reader);
-  font-size: var(--reader-font-size, 18px);
-  line-height: var(--reader-line-height, 1.8);
+  font-family: var(--font-family-reader);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-loose);
   text-align: justify;
   overflow-wrap: anywhere !important;
   word-break: break-word !important;
@@ -30,16 +34,33 @@
   white-space: normal !important;
 }
 
+/* Paragraphs */
 .reader-content p {
-  margin: 0 0 1.1em;
+  margin: 0 0 1.5em;
+  text-indent: 2em;
+  color: var(--reader-text);
+  letter-spacing: var(--letter-spacing-wide);
 }
 
+.reader-content p:first-of-type {
+  text-indent: 0;
+}
+
+/* Links */
 .reader-content a {
-  color: inherit;
+  color: var(--reader-accent);
+  text-decoration: none;
   text-decoration-thickness: 1px;
-  text-underline-offset: 0.18em;
+  text-underline-offset: 0.2em;
+  transition: color var(--transition-base);
 }
 
+.reader-content a:hover {
+  text-decoration: underline;
+  color: var(--color-primary-hover);
+}
+
+/* Media */
 .reader-content img,
 .reader-content svg,
 .reader-content video,
@@ -48,13 +69,20 @@
   display: block;
   max-width: 100%;
   height: auto;
+  border-radius: var(--radius-small);
+  margin: var(--spacing-2xl) 0;
 }
 
+/* Code blocks */
 .reader-content pre {
   max-width: 100% !important;
-  padding: 0.75em;
+  padding: var(--spacing-lg);
   overflow-x: auto;
   white-space: pre-wrap !important;
+  background: var(--color-bg-hover);
+  border-radius: var(--radius-small);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
 }
 
 .reader-content code,
@@ -63,8 +91,11 @@
   white-space: pre-wrap !important;
   overflow-wrap: anywhere !important;
   word-break: break-word !important;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 0.9em;
 }
 
+/* Tables */
 .reader-content table {
   display: block;
   width: 100%;
@@ -72,6 +103,7 @@
   overflow-x: auto;
   table-layout: fixed;
   border-collapse: collapse;
+  margin: var(--spacing-2xl) 0;
 }
 
 .reader-content tbody,
@@ -86,4 +118,83 @@
   min-width: 0 !important;
   overflow-wrap: anywhere !important;
   word-break: break-word !important;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+}
+
+.reader-content th {
+  background: var(--color-bg-hover);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Headings in content */
+.reader-content h1,
+.reader-content h2,
+.reader-content h3 {
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  margin: var(--spacing-5xl) 0 var(--spacing-2xl);
+  color: var(--reader-text);
+}
+
+.reader-content h1 {
+  font-size: var(--font-size-4xl);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.reader-content h2 {
+  font-size: var(--font-size-3xl);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.reader-content h3 {
+  font-size: var(--font-size-2xl);
+}
+
+/* Blockquotes */
+.reader-content blockquote {
+  margin: var(--spacing-2xl) 0;
+  padding-left: var(--spacing-2xl);
+  border-left: 4px solid var(--color-primary);
+  color: var(--reader-text-secondary);
+  font-style: italic;
+}
+
+/* Lists */
+.reader-content ul,
+.reader-content ol {
+  margin: var(--spacing-lg) 0;
+  padding-left: var(--spacing-3xl);
+}
+
+.reader-content li {
+  margin: var(--spacing-sm) 0;
+}
+
+/* ==================== Responsive ==================== */
+
+@media (max-width: 768px) {
+  .reader-content {
+    padding: var(--spacing-6xl) var(--spacing-2xl) 100px;
+    font-size: var(--font-size-lg);
+  }
+
+  .reader-content h1 {
+    font-size: var(--font-size-3xl);
+    margin: var(--spacing-4xl) 0 var(--spacing-lg);
+  }
+
+  .reader-content h2 {
+    font-size: var(--font-size-2xl);
+  }
+
+  .reader-content h3 {
+    font-size: var(--font-size-xl);
+  }
+}
+
+@media (max-width: 520px) {
+  .reader-content {
+    padding: var(--spacing-6xl) var(--spacing-xl) 100px;
+  }
 }

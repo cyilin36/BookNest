@@ -26,7 +26,7 @@ const progress = computed(() => {
 })
 
 const isShelf = computed(() => props.mode === 'bookshelf' && 'source_type' in props.book)
-const progressLabel = computed(() => `${Math.round(progress.value)}% 已读`)
+const progressLabel = computed(() => `${Math.round(progress.value)}%`)
 </script>
 
 <template>
@@ -34,6 +34,10 @@ const progressLabel = computed(() => `${Math.round(progress.value)}% 已读`)
     <div class="book-cover-wrap">
       <button class="cover-button" type="button" @click="mode === 'bookshelf' && 'readable' in book && book.readable ? emit('read') : emit('open')">
         <BookCover :src="book.cover_url" :title="book.title" />
+        <!-- Progress bar overlay for bookshelf -->
+        <div v-if="mode === 'bookshelf' && 'readable' in book" class="progress-overlay">
+          <div class="progress-bar" :style="{ width: `${progress}%` }" />
+        </div>
       </button>
       <n-tooltip v-if="isShelf && 'source_type' in book" trigger="hover">
         <template #trigger>
@@ -47,13 +51,9 @@ const progressLabel = computed(() => `${Math.round(progress.value)}% 已读`)
     </div>
     <div class="book-info">
       <BookTitle class="book-title" :title="book.title" @click="emit('open')" />
-      <div class="book-author">{{ book.author || '未知作者' }}</div>
-      <p v-if="'description' in book && book.description" class="book-description">{{ book.description }}</p>
+      <div v-if="book.author" class="book-author">{{ book.author }}</div>
+
       <template v-if="mode === 'bookshelf' && 'readable' in book">
-        <div class="progress-line" aria-hidden="true">
-          <span :style="{ width: `${progress}%` }" />
-        </div>
-        <div class="progress-label">{{ book.readable ? progressLabel : '暂时不可读' }}</div>
         <div class="book-actions">
           <n-tooltip trigger="hover">
             <template #trigger>
@@ -97,29 +97,6 @@ const progressLabel = computed(() => `${Math.round(progress.value)}% 已读`)
           </n-tooltip>
         </div>
       </template>
-      <template v-else-if="mode === 'library' && 'in_bookshelf' in book">
-        <div class="library-actions">
-          <n-button class="book-primary-action" size="small" type="primary" :disabled="book.in_bookshelf || book.library_status !== 'approved'" @click="emit('join')">
-            {{ book.in_bookshelf ? '已在书架' : book.library_status === 'hidden' ? '已下架' : '加入书架' }}
-          </n-button>
-          <n-tooltip trigger="hover">
-            <template #trigger>
-              <n-button size="small" secondary circle :disabled="book.library_status !== 'approved'" @click="emit('download')">
-                <Download :size="16" />
-              </n-button>
-            </template>
-            下载
-          </n-tooltip>
-          <n-tooltip trigger="hover">
-            <template #trigger>
-              <n-button size="small" secondary circle @click="emit('open')">
-                <Info :size="16" />
-              </n-button>
-            </template>
-            详情
-          </n-tooltip>
-        </div>
-      </template>
     </div>
   </article>
 </template>
@@ -128,205 +105,184 @@ const progressLabel = computed(() => `${Math.round(progress.value)}% 已读`)
 .book-card {
   min-width: 0;
   width: 100%;
+  cursor: pointer;
+}
+
+.book-card:hover .cover-button {
+  transform: translateY(-4px);
+}
+
+.book-card:hover .cover-button::before {
+  box-shadow: var(--shadow-cover-hover);
 }
 
 .book-cover-wrap {
   position: relative;
   min-width: 0;
   width: 100%;
+  margin-bottom: var(--spacing-md);
 }
 
 .cover-button {
-  padding: 0;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  text-align: left;
-  cursor: pointer;
-}
-
-.cover-button {
+  position: relative;
   display: block;
   width: 100%;
-  filter: drop-shadow(0 8px 12px rgba(17, 24, 39, 0.16));
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: transform var(--transition-slow) ease;
+}
+
+.cover-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-cover);
+  transition: box-shadow var(--transition-slow) ease;
+  pointer-events: none;
 }
 
 .cover-button :deep(.book-cover) {
-  border-radius: 8px;
+  border-radius: var(--radius-large);
+  aspect-ratio: var(--book-cover-aspect-ratio);
 }
 
+/* Progress overlay */
+.progress-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 0 0 var(--radius-large) var(--radius-large);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width var(--transition-slow) ease;
+}
+
+/* Source chip */
 .source-chip {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
   display: inline-grid;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   place-items: center;
-  color: var(--color-text-sec);
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(209, 213, 219, 0.9);
-  border-radius: 999px;
-  box-shadow: 0 4px 10px rgba(17, 24, 39, 0.12);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--backdrop-blur-sm));
+  -webkit-backdrop-filter: blur(var(--backdrop-blur-sm));
+  border-radius: var(--radius-round);
+  box-shadow: var(--shadow-light);
+  z-index: 2;
 }
 
 .source-chip.private {
-  color: #2563eb;
+  color: var(--color-primary);
 }
 
 .source-chip.library {
-  color: #4b5563;
+  color: var(--color-text-sec);
 }
 
+/* Book info */
 .book-info {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
   width: 100%;
   min-width: 0;
-  gap: 4px;
-  padding-top: 10px;
 }
 
 .book-title {
-  --book-title-height: 42px;
-  --book-title-font-size: 15px;
-  --book-title-font-weight: 700;
-  --book-title-line-height: 21px;
-  --book-title-text-align: center;
+  --book-title-height: auto;
+  --book-title-font-size: var(--font-size-md);
+  --book-title-font-weight: var(--font-weight-semibold);
+  --book-title-line-height: var(--line-height-tight);
+  --book-title-text-align: left;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(var(--font-size-md) * var(--line-height-tight) * 2);
 }
 
-.book-author,
-.book-description {
-  overflow: hidden;
+.book-author {
+  font-size: var(--font-size-sm);
   color: var(--color-text-sec);
-  font-size: 15px;
-  line-height: 1.25;
-  text-align: center;
+  line-height: var(--line-height-normal);
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.book-description {
-  display: none;
-  margin: 0;
-}
-
-.progress-line {
-  height: 7px;
-  margin-top: 6px;
-  overflow: hidden;
-  background: #d7dce5;
-  border-radius: 999px;
-}
-
-.progress-line span {
-  display: block;
-  height: 100%;
-  background: #17366f;
-  border-radius: inherit;
-}
-
-.progress-label {
-  color: var(--color-text-main);
-  font-size: 14px;
-  line-height: 1.25;
-  text-align: center;
-}
-
-.book-actions,
-.library-actions {
+/* Actions */
+.book-actions {
   display: flex;
   align-items: center;
-  width: 100%;
-  min-width: 0;
-  gap: 4px;
-  min-height: 32px;
-  margin-top: 2px;
-}
-
-.book-actions {
   justify-content: center;
-}
-
-.library-actions {
-  justify-content: flex-start;
-  margin-top: 6px;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+  width: 100%;
 }
 
 .icon-action {
-  --n-width: 28px !important;
-  --n-height: 28px !important;
+  --n-width: var(--height-button-icon-sm) !important;
+  --n-height: var(--height-button-icon-sm) !important;
+  transition: transform var(--transition-base);
+}
+
+.icon-action:hover:not(:disabled) {
+  transform: translateY(-1px);
 }
 
 .read-action:not(:disabled) {
-  --n-color: #e8f5ee !important;
-  --n-color-hover: #d5f0e2 !important;
-  --n-color-pressed: #c7e8d6 !important;
+  --n-color: var(--color-primary-suppl) !important;
+  --n-color-hover: var(--color-primary-light) !important;
   --n-text-color: var(--color-primary) !important;
-  --n-text-color-hover: var(--color-primary) !important;
-  --n-border: 1px solid rgba(24, 160, 88, 0.22) !important;
-  --n-border-hover: 1px solid rgba(24, 160, 88, 0.34) !important;
+  --n-text-color-hover: var(--color-primary-hover) !important;
+  --n-border: 1px solid transparent !important;
 }
 
-.book-primary-action {
-  --n-color: var(--color-primary) !important;
-  --n-color-hover: var(--color-primary-hover) !important;
-  --n-color-pressed: var(--color-primary) !important;
-  --n-color-focus: var(--color-primary-hover) !important;
-  --n-border: 1px solid var(--color-primary) !important;
-  --n-border-hover: 1px solid var(--color-primary-hover) !important;
-  --n-border-pressed: 1px solid var(--color-primary) !important;
-  --n-border-focus: 1px solid var(--color-primary-hover) !important;
-  --n-text-color: #ffffff !important;
-  --n-text-color-hover: #ffffff !important;
-  --n-text-color-pressed: #ffffff !important;
-  --n-text-color-focus: #ffffff !important;
-  font-weight: 700;
-}
-
+/* Unreadable state */
 .is-unreadable .cover-button {
-  opacity: 0.72;
+  opacity: 0.6;
 }
 
-@media (max-width: 520px) {
+/* Responsive */
+@media (max-width: 768px) {
   .source-chip {
-    top: 6px;
-    right: 6px;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
   }
 
-  .book-info {
-    gap: 3px;
-    padding-top: 8px;
+  .source-chip :deep(svg) {
+    width: 12px;
+    height: 12px;
   }
 
   .book-title {
-    --book-title-height: 34px;
-    --book-title-font-size: 14px;
-    --book-title-line-height: 17px;
+    --book-title-font-size: var(--font-size-base);
   }
 
   .book-author {
-    font-size: 13px;
-  }
-
-  .progress-line {
-    height: 6px;
-    margin-top: 5px;
-  }
-
-  .progress-label {
-    font-size: 13px;
-  }
-
-  .book-actions {
-    gap: 1px;
-    min-height: 26px;
+    font-size: 12px;
   }
 
   .icon-action {
-    --n-width: 23px !important;
-    --n-height: 23px !important;
+    --n-width: 28px !important;
+    --n-height: 28px !important;
+  }
+
+  .book-actions {
+    gap: var(--spacing-xs);
   }
 }
 </style>

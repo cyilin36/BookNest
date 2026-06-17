@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: booknest-test-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: booknest
+      POSTGRES_USER: booknest
+      POSTGRES_PASSWORD: booknest_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "15432:5432"
+    volumes:
+      - ./test/postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booknest -d booknest"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    image: booknest-backend:latest
+    build:
+      context: ./backend
+    container_name: booknest-test-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_DSN: postgres://booknest:booknest_password@postgres:5432/booknest?sslmode=disable
+      DATA_DIR: /data
+      BOOKS_DIR: /data/books
+      COVERS_DIR: /data/covers
+      ASSETS_DIR: /data/assets
+      TEMP_DIR: /data/temp
+      HTTP_ADDR: :8080
+      JWT_SECRET: test-only-change-me
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./test/backend-data:/data

@@ -1,39 +1,257 @@
+/* ==================== BookNest Design System ==================== */
+
 :root,
 .theme-modern {
-  --color-primary: #18a058;
-  --color-primary-hover: #36ad6a;
-  --color-primary-suppl: rgba(24, 160, 88, 0.1);
-  --color-bg-page: #f3f4f6;
+  /* -------------------- Color System -------------------- */
+
+  /* Primary - Blue */
+  --color-primary: #4A90E2;
+  --color-primary-hover: #3A7BC8;
+  --color-primary-active: #2A6BB8;
+  --color-primary-light: rgba(74, 144, 226, 0.1);
+  --color-primary-suppl: rgba(74, 144, 226, 0.05);
+
+  /* Background */
+  --color-bg-page: #F8F9FA;
   --color-bg-card: #ffffff;
-  --color-bg-sidebar: #ffffff;
-  --color-border: #e5e7eb;
-  --color-text-main: #1f2937;
-  --color-text-sec: #6b7280;
-  --font-reader: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-bg-hover: rgba(0, 0, 0, 0.04);
+  --color-bg-active: rgba(0, 0, 0, 0.08);
+  --color-bg-input: #F8F9FA;
+
+  /* Text */
+  --color-text-main: #1A1A1A;
+  --color-text-sec: #6B6B6B;
+  --color-text-tertiary: #999999;
+  --color-text-placeholder: #B0B0B0;
+
+  /* Border */
+  --color-border: #E8EAED;
+  --color-border-hover: rgba(0, 0, 0, 0.15);
+  --color-border-focus: #4A90E2;
+
+  /* Functional */
+  --color-success: #52C41A;
+  --color-warning: #FAAD14;
+  --color-error: #F5222D;
+  --color-info: #1890FF;
+
+  /* -------------------- Shadow System -------------------- */
+
+  --shadow-light: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-medium: 0 2px 8px rgba(0, 0, 0, 0.12);
+  --shadow-heavy: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.18);
+
+  /* Component-specific shadows */
+  --shadow-button-primary: 0 2px 8px rgba(74, 144, 226, 0.25);
+  --shadow-button-primary-hover: 0 4px 12px rgba(74, 144, 226, 0.35);
+  --shadow-cover: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --shadow-cover-hover: 0 8px 24px rgba(0, 0, 0, 0.18);
+  --shadow-drawer: 2px 0 16px rgba(0, 0, 0, 0.1);
+
+  /* -------------------- Border Radius -------------------- */
+
+  --radius-xlarge: 16px;
+  --radius-large: 12px;
+  --radius-medium: 10px;
+  --radius-small: 8px;
+  --radius-xsmall: 6px;
+  --radius-round: 50%;
+
+  /* -------------------- Spacing (8px base) -------------------- */
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 20px;
+  --spacing-2xl: 24px;
+  --spacing-3xl: 32px;
+  --spacing-4xl: 40px;
+  --spacing-5xl: 48px;
+  --spacing-6xl: 64px;
+  --spacing-7xl: 80px;
+
+  /* Semantic spacing */
+  --spacing-section: 32px;
+  --spacing-component: 16px;
+  --spacing-grid-h: 24px;
+  --spacing-grid-v: 32px;
+  --padding-page: 32px;
+  --padding-page-mobile: 20px;
+
+  /* -------------------- Typography -------------------- */
+
+  --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --font-family-reader: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* Font sizes */
+  --font-size-xs: 11px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;
+  --font-size-5xl: 32px;
+
+  /* Font weights */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Line heights */
+  --line-height-tight: 1.4;
+  --line-height-normal: 1.6;
+  --line-height-relaxed: 1.8;
+  --line-height-loose: 1.9;
+
+  /* Letter spacing */
+  --letter-spacing-tighter: -0.03em;
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide: 0.02em;
+  --letter-spacing-wider: 0.03em;
+  --letter-spacing-widest: 0.05em;
+
+  /* -------------------- Transitions -------------------- */
+
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+  --transition-slow: 0.3s ease;
+  --transition-drawer: 0.3s ease;
+
+  /* -------------------- Component Sizes -------------------- */
+
+  /* Buttons */
+  --height-button-sm: 32px;
+  --height-button-md: 44px;
+  --height-button-icon: 40px;
+  --height-button-icon-sm: 32px;
+
+  /* Inputs */
+  --height-input-sm: 36px;
+  --height-input-md: 44px;
+  --height-input-lg: 52px;
+
+  /* Navigation */
+  --height-navbar: 64px;
+  --height-navbar-mobile: 56px;
+
+  /* Layout */
+  --container-max-width: 1400px;
+  --reader-max-width: 720px;
+
+  /* Book cards */
+  --book-card-min-width: 160px;
+  --book-card-min-width-mobile: 120px;
+  --book-cover-aspect-ratio: 2 / 3;
+
+  /* -------------------- Z-index Layers -------------------- */
+
+  --z-base: 1;
+  --z-sticky: 100;
+  --z-dropdown: 1000;
+  --z-modal-overlay: 1500;
+  --z-modal: 1600;
+  --z-drawer: 2000;
+  --z-tooltip: 3000;
+
+  /* -------------------- Reader Specific -------------------- */
+
+  --reader-bg: #FDFDFB;
+  --reader-text: #2A2A2A;
+  --reader-text-secondary: #6B6B6B;
+  --reader-accent: #4A90E2;
+  --reader-overlay-bg: rgba(255, 255, 255, 0.95);
+  --reader-overlay-border: rgba(0, 0, 0, 0.06);
+
+  /* -------------------- Glassmorphism -------------------- */
+
+  --backdrop-blur-sm: 8px;
+  --backdrop-blur-md: 12px;
+  --backdrop-blur-lg: 16px;
+  --glass-bg: rgba(255, 255, 255, 0.95);
+  --glass-bg-strong: rgba(255, 255, 255, 0.98);
+  --glass-border: rgba(0, 0, 0, 0.06);
 }
+
+/* ==================== Sepia Theme ==================== */
 
 .theme-sepia {
-  --color-primary: #8b5a2b;
-  --color-primary-hover: #a06d3b;
-  --color-primary-suppl: rgba(139, 90, 43, 0.1);
-  --color-bg-page: #f4edd8;
-  --color-bg-card: #fcf8ec;
-  --color-bg-sidebar: #efe5cb;
-  --color-border: #e3d5b5;
-  --color-text-main: #2c2214;
-  --color-text-sec: #6d583e;
-  --font-reader: "Noto Serif SC", Georgia, serif;
+  --color-primary: #8B5A2B;
+  --color-primary-hover: #A06D3B;
+  --color-primary-active: #7B4A1B;
+  --color-primary-light: rgba(139, 90, 43, 0.1);
+  --color-primary-suppl: rgba(139, 90, 43, 0.05);
+
+  --color-bg-page: #F4EDD8;
+  --color-bg-card: #FCF8EC;
+  --color-bg-input: #F4EDD8;
+
+  --color-text-main: #2C2214;
+  --color-text-sec: #6D583E;
+
+  --color-border: #E3D5B5;
+
+  --shadow-light: 0 1px 3px rgba(44, 34, 20, 0.08);
+  --shadow-medium: 0 2px 8px rgba(44, 34, 20, 0.12);
+  --shadow-heavy: 0 4px 16px rgba(44, 34, 20, 0.12);
+  --shadow-hover: 0 8px 24px rgba(44, 34, 20, 0.18);
+
+  --shadow-button-primary: 0 2px 8px rgba(139, 90, 43, 0.25);
+  --shadow-button-primary-hover: 0 4px 12px rgba(139, 90, 43, 0.35);
+
+  --font-family-reader: 'Noto Serif SC', Georgia, serif;
+
+  --reader-bg: #FCF8EC;
+  --reader-text: #2C2214;
+  --reader-text-secondary: #6D583E;
+  --reader-accent: #8B5A2B;
+  --reader-overlay-bg: rgba(252, 248, 236, 0.95);
+  --glass-bg: rgba(252, 248, 236, 0.95);
 }
 
+/* ==================== Dark Theme ==================== */
+
 .theme-dark {
-  --color-primary: #10b981;
-  --color-primary-hover: #34d399;
-  --color-primary-suppl: rgba(16, 185, 129, 0.15);
-  --color-bg-page: #09090b;
-  --color-bg-card: #18181b;
-  --color-bg-sidebar: #111113;
-  --color-border: #27272a;
-  --color-text-main: #f4f4f5;
-  --color-text-sec: #a1a1aa;
-  --font-reader: "Noto Serif SC", Georgia, serif;
+  --color-primary: #10B981;
+  --color-primary-hover: #34D399;
+  --color-primary-active: #059669;
+  --color-primary-light: rgba(16, 185, 129, 0.15);
+  --color-primary-suppl: rgba(16, 185, 129, 0.08);
+
+  --color-bg-page: #09090B;
+  --color-bg-card: #18181B;
+  --color-bg-hover: rgba(255, 255, 255, 0.06);
+  --color-bg-active: rgba(255, 255, 255, 0.12);
+  --color-bg-input: #18181B;
+
+  --color-text-main: #F4F4F5;
+  --color-text-sec: #A1A1AA;
+  --color-text-tertiary: #71717A;
+
+  --color-border: #27272A;
+  --color-border-hover: #3F3F46;
+
+  --shadow-light: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-medium: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-heavy: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.6);
+
+  --shadow-button-primary: 0 2px 8px rgba(16, 185, 129, 0.25);
+  --shadow-button-primary-hover: 0 4px 12px rgba(16, 185, 129, 0.35);
+
+  --font-family-reader: 'Noto Serif SC', Georgia, serif;
+
+  --reader-bg: #18181B;
+  --reader-text: #F4F4F5;
+  --reader-text-secondary: #A1A1AA;
+  --reader-accent: #10B981;
+  --reader-overlay-bg: rgba(24, 24, 27, 0.95);
+  --glass-bg: rgba(24, 24, 27, 0.95);
+  --glass-border: rgba(255, 255, 255, 0.1);
 }

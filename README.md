@@ -92,6 +92,34 @@ JWT_SECRET: change-this-secret-before-production
 
 ## 本地开发
 
+### 快速启动开发环境
+
+```bash
+# 1. 启动数据库
+./start-postgres.sh
+
+# 2. 启动后端（新终端）
+./start-backend.sh
+
+# 3. 启动前端（新终端）
+./start-frontend.sh
+
+# 前端访问：http://localhost:5173
+# 后端访问：http://localhost:8080
+```
+
+### 停止和清理
+
+```bash
+# 停止所有服务
+./stop-services.sh
+
+# 清理测试数据（删除 test/ 目录所有数据）
+./clean-test.sh
+```
+
+### 手动启动
+
 后端：
 
 ```bash
@@ -110,6 +138,8 @@ npm run dev
 
 前端开发服务器默认运行在 `5173`，并会将 `/api` 代理到后端 `8080`。
 
+更多开发配置和环境变量说明，参考 `DEVELOPMENT.md`。
+
 ## 项目结构
 
 ```text
@@ -117,6 +147,8 @@ backend/              Go 后端
 frontend/             Vue 前端
 Dockerfile            生产镜像构建文件
 docker-compose.yml    Docker Compose 部署文件
+docker-compose.test.yml   测试环境配置
+start-*.sh            开发环境启动脚本
 ```
 
 ## 说明

@@ -32,3 +32,26 @@ logs
 *.db
 *.sqlite
 *.sqlite3
+
+# 测试和开发文件
+test/
+*.sh
+docker-compose.test.yml
+DEVELOPMENT.md
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# 文档
+*.md
+!README.md
+backend-docs/
+frontend-docs/

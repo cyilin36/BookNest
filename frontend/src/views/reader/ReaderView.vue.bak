@@ -1,0 +1,1126 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useMessage } from 'naive-ui'
+import { ArrowLeft, ChevronLeft, ChevronRight, List, Settings2 } from 'lucide-vue-next'
+import EmptyState from '@/components/common/EmptyState.vue'
+import { useReaderStore } from '@/stores/reader'
+import { useSettingsStore } from '@/stores/settings'
+import { useReaderProgress } from '@/composables/useReaderProgress'
+import type { ReaderChapter, ReaderChapterContent, ReaderLineHeight, ReaderMode, ThemeName } from '@/api/types'
+
+const route = useRoute()
+const router = useRouter()
+const message = useMessage()
+const reader = useReaderStore()
+const settings = useSettingsStore()
+const chapterDrawer = ref(false)
+const settingsDrawer = ref(false)
+const readerMenuOpen = ref(false)
+const bookId = Number(route.params.bookId)
+const { save, saveNow } = useReaderProgress(bookId)
+
+const activeChapter = computed(() => reader.chapters.find((chapter) => chapter.id === reader.activeChapterId) || null)
+const readableChapters = computed(() => reader.chapters.filter((chapter) => !chapter.is_volume))
+const activeContent = ref<string>('')
+const activeContentType = ref<ReaderChapterContent['content_type']>('html')
+const readerTopRef = ref<HTMLElement | null>(null)
+const pageViewportRef = ref<HTMLElement | null>(null)
+const pageFlowRef = ref<HTMLElement | null>(null)
+const pageIndex = ref(0)
+const pageCount = ref(1)
+const pageWidth = ref(0)
+const pageHeight = ref(0)
+const isRestoringPosition = ref(false)
+const ignoreNextScrollMenuClose = ref(false)
+const chapterItemRefs = new Map<number, HTMLElement>()
+const readerPageGap = 32
+let pageRecalculationToken = 0
+
+interface SavedReaderPosition {
+  chapterId: number
+  scrollRatio: number
+}
+
+interface PageTurnSnapshot {
+  chapterId: number
+  chapterTitle: string
+  contentType: ReaderChapterContent['content_type']
+  content: string
+  pageIndex: number
+  pageCount: number
+}
+
+interface CrossChapterPageTurn {
+  direction: 'prev' | 'next'
+  current: PageTurnSnapshot
+  target: PageTurnSnapshot
+  offset: number
+  animated: boolean
+}
+
+interface PreparedAdjacentPage {
+  chapterId: number
+  content: ReaderChapterContent
+  pageCount: number
+}
+
+const isPageMode = computed(() => settings.reader.reading_mode === 'page')
+const crossChapterPageTurn = ref<CrossChapterPageTurn | null>(null)
+const preparedAdjacentPages = ref<{ prev: PreparedAdjacentPage | null; next: PreparedAdjacentPage | null }>({ prev: null, next: null })
+const pageDistance = computed(() => pageWidth.value + readerPageGap)
+const pageFlowStyle = computed(() => ({
+  transform: isPageMode.value ? `translateX(-${pageIndex.value * (pageWidth.value + readerPageGap)}px)` : undefined
+}))
+const crossChapterPanes = computed(() => {
+  const turn = crossChapterPageTurn.value
+  if (!turn) return []
+  return turn.direction === 'prev' ? [turn.target, turn.current] : [turn.current, turn.target]
+})
+const crossChapterTrackStyle = computed(() => {
+  const turn = crossChapterPageTurn.value
+  return {
+    transform: `translateX(${turn?.offset || 0}px)`,
+    transition: turn?.animated ? 'transform 0.18s ease' : 'none'
+  }
+})
+
+function isReadableChapter(chapter: ReaderChapter | null | undefined) {
+  return !!chapter && !chapter.is_volume
+}
+
+function chapterIndexById(id: number | null) {
+  return id ? readableChapters.value.findIndex((chapter) => chapter.id === id) : -1
+}
+
+function fallbackReadableChapterFrom(id: number) {
+  const chapterIndex = reader.chapters.findIndex((chapter) => chapter.id === id)
+  if (chapterIndex < 0) return readableChapters.value[0] || null
+  return reader.chapters.slice(chapterIndex).find(isReadableChapter) || [...reader.chapters].reverse().find(isReadableChapter) || null
+}
+
+function prevChapter(options: { restoreScrollRatio?: number | null } = {}) {
+  const index = chapterIndexById(reader.activeChapterId)
+  if (index > 0) {
+    loadChapter(readableChapters.value[index - 1].id, {
+      resetScroll: options.restoreScrollRatio === undefined,
+      restoreScrollRatio: options.restoreScrollRatio ?? null
+    })
+  }
+}
+
+function nextChapter(options: { restoreScrollRatio?: number | null } = {}) {
+  const index = chapterIndexById(reader.activeChapterId)
+  if (index >= 0 && index < readableChapters.value.length - 1) {
+    loadChapter(readableChapters.value[index + 1].id, {
+      resetScroll: options.restoreScrollRatio === undefined,
+      restoreScrollRatio: options.restoreScrollRatio ?? null
+    })
+  }
+}
+
+function prevChapterFromStart() {
+  prevChapter({ restoreScrollRatio: 0 })
+}
+
+function nextChapterFromStart() {
+  nextChapter({ restoreScrollRatio: 0 })
+}
+
+function openReaderMenu() {
+  readerMenuOpen.value = true
+}
+
+function handleReaderTap(action: () => void) {
+  if (readerMenuOpen.value) {
+    readerMenuOpen.value = false
+    return
+  }
+  action()
+}
+
+async function runWithMenuKept(action: () => void | Promise<void>) {
+  ignoreNextScrollMenuClose.value = true
+  try {
+    await action()
+  } finally {
+    window.setTimeout(() => {
+      ignoreNextScrollMenuClose.value = false
+    }, 120)
+  }
+}
+
+function setChapterItemRef(chapterId: number, element: Element | null) {
+  if (element instanceof HTMLElement) {
+    chapterItemRefs.set(chapterId, element)
+  } else {
+    chapterItemRefs.delete(chapterId)
+  }
+}
+
+async function scrollActiveChapterIntoView() {
+  await nextTick()
+  if (!reader.activeChapterId) return
+  chapterItemRefs.get(reader.activeChapterId)?.scrollIntoView({ block: 'center' })
+}
+
+function openChapterDrawer() {
+  chapterDrawer.value = true
+  scrollActiveChapterIntoView()
+}
+
+function clampPercentage(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function clampScrollRatio(value: number) {
+  return Math.max(0, Math.min(1, value))
+}
+
+function progressType() {
+  return reader.bookMeta?.format === 'pdf' ? 'pdf_page' : reader.bookMeta?.format === 'txt' ? 'txt_offset' : 'epub_cfi'
+}
+
+function chapterProgressPercentage(chapterId: number, scrollRatio: number) {
+  const index = Math.max(0, readableChapters.value.findIndex((item) => item.id === chapterId))
+  const chapterShare = (index + clampScrollRatio(scrollRatio)) / Math.max(readableChapters.value.length, 1)
+  return clampPercentage(chapterShare * 100)
+}
+
+function currentScrollRatio() {
+  const scrollable = document.documentElement.scrollHeight - window.innerHeight
+  if (scrollable <= 0) return 0
+  return clampScrollRatio(window.scrollY / scrollable)
+}
+
+function currentReadingRatio() {
+  if (!isPageMode.value || pageCount.value <= 1) return currentScrollRatio()
+  return clampScrollRatio(pageIndex.value / (pageCount.value - 1))
+}
+
+function encodeProgressValue(chapterId: number, scrollRatio: number) {
+  return JSON.stringify({ chapterId, scrollRatio: Number(clampScrollRatio(scrollRatio).toFixed(4)) })
+}
+
+function parseProgressValue(value: string | null | undefined): SavedReaderPosition | null {
+  if (!value) return null
+
+  try {
+    const parsed = JSON.parse(value) as Partial<SavedReaderPosition> | number
+    if (typeof parsed === 'number' && Number.isFinite(parsed)) {
+      return { chapterId: parsed, scrollRatio: 0 }
+    }
+    if (typeof parsed === 'object' && Number.isFinite(parsed.chapterId)) {
+      return {
+        chapterId: Number(parsed.chapterId),
+        scrollRatio: Number.isFinite(parsed.scrollRatio) ? clampScrollRatio(Number(parsed.scrollRatio)) : 0
+      }
+    }
+  } catch {
+    const chapterId = Number(value)
+    if (Number.isFinite(chapterId)) return { chapterId, scrollRatio: 0 }
+  }
+
+  return null
+}
+
+function savedReadablePosition() {
+  const saved = parseProgressValue(reader.progress?.progress_value)
+  if (!saved) return null
+  const savedChapter = reader.chapters.find((chapter) => chapter.id === saved.chapterId)
+  if (isReadableChapter(savedChapter)) return saved
+  const fallback = fallbackReadableChapterFrom(saved.chapterId)
+  return fallback ? { chapterId: fallback.id, scrollRatio: 0 } : null
+}
+
+function updateTheme(value: ThemeName) {
+  settings.setTheme(value)
+}
+
+function updateReadingMode(value: ReaderMode) {
+  settings.updateReaderSettings({ reading_mode: value })
+}
+
+function updateLineHeight(value: ReaderLineHeight) {
+  settings.updateReaderSettings({ line_height: value })
+}
+
+function updateFontSize(value: number) {
+  settings.updateReaderSettings({ font_size: value })
+}
+
+function updateContentWidth(value: number) {
+  settings.updateReaderSettings({ content_width: value })
+}
+
+function exitReader() {
+  saveCurrentPosition(true)
+  router.push('/bookshelf')
+}
+
+async function scrollReaderToTop() {
+  await nextTick()
+  readerTopRef.value?.scrollIntoView({ block: 'start' })
+  window.scrollTo({ top: 0, behavior: 'auto' })
+  pageIndex.value = 0
+}
+
+async function scrollReaderToRatio(scrollRatio: number) {
+  await nextTick()
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      const scrollable = document.documentElement.scrollHeight - window.innerHeight
+      window.scrollTo({ top: Math.max(0, scrollable) * clampScrollRatio(scrollRatio), behavior: 'auto' })
+      resolve()
+    })
+  })
+}
+
+function saveCurrentPosition(immediate = false) {
+  if (!reader.activeChapterId || isRestoringPosition.value) return
+  const currentChapter = reader.chapters.find((chapter) => chapter.id === reader.activeChapterId)
+  if (!isReadableChapter(currentChapter) || !activeContent.value) return
+  const scrollRatio = currentReadingRatio()
+  const value = encodeProgressValue(reader.activeChapterId, scrollRatio)
+  const percentage = chapterProgressPercentage(reader.activeChapterId, scrollRatio)
+  const persist = immediate ? saveNow : save
+  persist(progressType(), value, percentage)
+}
+
+function clampPageIndex(value: number) {
+  return Math.max(0, Math.min(Math.max(pageCount.value - 1, 0), value))
+}
+
+function setPageIndex(value: number, immediateSave = true) {
+  pageIndex.value = clampPageIndex(value)
+  if (immediateSave) saveCurrentPosition(true)
+  prepareAdjacentPages()
+}
+
+function createChapterContentElement(chapterTitle: string, contentType: ReaderChapterContent['content_type'], content: string) {
+  const fragment = document.createDocumentFragment()
+  if (contentType !== 'html') {
+    const title = document.createElement('h2')
+    title.className = 'reader-chapter-title'
+    title.textContent = chapterTitle
+    fragment.appendChild(title)
+  }
+  const body = document.createElement('div')
+  body.className = contentType === 'html' ? 'reader-content' : 'reader-content reader-content-text'
+  if (contentType === 'html') {
+    body.innerHTML = content
+  } else {
+    body.textContent = content
+  }
+  fragment.appendChild(body)
+  return fragment
+}
+
+async function measureChapterPageCount(chapter: ReaderChapter, content: ReaderChapterContent) {
+  await nextTick()
+  const width = pageWidth.value
+  const height = pageHeight.value
+  if (!width || !height) return 1
+
+  const measuringFlow = document.createElement('div')
+  measuringFlow.className = 'reader-page-flow'
+  measuringFlow.style.position = 'absolute'
+  measuringFlow.style.left = '-10000px'
+  measuringFlow.style.top = '0'
+  measuringFlow.style.width = `${width}px`
+  measuringFlow.style.maxWidth = `${width}px`
+  measuringFlow.style.height = 'auto'
+  measuringFlow.style.visibility = 'hidden'
+  measuringFlow.style.pointerEvents = 'none'
+  measuringFlow.style.columnWidth = 'auto'
+  measuringFlow.style.columnGap = 'normal'
+  measuringFlow.style.transform = 'none'
+  measuringFlow.style.transition = 'none'
+  measuringFlow.style.setProperty('--reader-page-width', `${width}px`)
+  measuringFlow.style.setProperty('--reader-page-height', `${height}px`)
+  measuringFlow.style.setProperty('--reader-page-gap', `${readerPageGap}px`)
+  measuringFlow.appendChild(createChapterContentElement(chapter.title, content.content_type, content.content))
+  document.body.appendChild(measuringFlow)
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  const contentHeight = measuringFlow.scrollHeight
+  measuringFlow.remove()
+  return Math.max(1, Math.ceil(contentHeight / height))
+}
+
+function pageTurnFlowStyle(pane: PageTurnSnapshot) {
+  return {
+    transform: `translateX(-${pane.pageIndex * pageDistance.value}px)`
+  }
+}
+
+function waitForCrossChapterPageTurn() {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, 200))
+}
+
+function clearPreparedAdjacentPages() {
+  preparedAdjacentPages.value = { prev: null, next: null }
+}
+
+async function prepareAdjacentPage(direction: 'prev' | 'next') {
+  if (!isPageMode.value || !reader.activeChapterId || !activeContent.value || !pageWidth.value || !pageHeight.value) return
+
+  const currentIndex = chapterIndexById(reader.activeChapterId)
+  const targetIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1
+  const targetChapter = readableChapters.value[targetIndex]
+  if (!targetChapter) return
+
+  const currentPrepared = preparedAdjacentPages.value[direction]
+  if (currentPrepared?.chapterId === targetChapter.id) return
+
+  const targetContent = await reader.loadChapterContent(bookId, targetChapter.id)
+  const targetPageCount = await measureChapterPageCount(targetChapter, targetContent)
+  if (reader.activeChapterId !== readableChapters.value[currentIndex]?.id || !isPageMode.value) return
+  preparedAdjacentPages.value = {
+    ...preparedAdjacentPages.value,
+    [direction]: {
+      chapterId: targetChapter.id,
+      content: targetContent,
+      pageCount: targetPageCount
+    }
+  }
+}
+
+function prepareAdjacentPages() {
+  if (!isPageMode.value || crossChapterPageTurn.value) return
+  const currentIndex = chapterIndexById(reader.activeChapterId)
+  if (currentIndex < 0) return
+  if (pageIndex.value >= Math.floor(pageCount.value / 2)) prepareAdjacentPage('next')
+  if (pageIndex.value <= Math.ceil(pageCount.value / 2)) prepareAdjacentPage('prev')
+}
+
+async function recalculatePages(targetRatio: number | null = null) {
+  await nextTick()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+  if (!isPageMode.value) {
+    pageWidth.value = 0
+    pageCount.value = 1
+    pageIndex.value = 0
+    return
+  }
+
+  const viewport = pageViewportRef.value
+  const flow = pageFlowRef.value
+  if (!viewport || !flow) return
+
+  const viewportStyle = window.getComputedStyle(viewport)
+  const horizontalPadding = Number.parseFloat(viewportStyle.paddingLeft) + Number.parseFloat(viewportStyle.paddingRight)
+  const verticalPadding = Number.parseFloat(viewportStyle.paddingTop) + Number.parseFloat(viewportStyle.paddingBottom)
+  const width = Math.max(1, viewport.clientWidth - horizontalPadding)
+  const height = Math.max(1, viewport.clientHeight - verticalPadding)
+  pageWidth.value = width
+  pageHeight.value = height
+  flow.style.setProperty('--reader-page-width', `${width}px`)
+  flow.style.setProperty('--reader-page-height', `${height}px`)
+  flow.style.setProperty('--reader-page-gap', `${readerPageGap}px`)
+
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+  const measuringFlow = flow.cloneNode(true) as HTMLElement
+  measuringFlow.style.position = 'absolute'
+  measuringFlow.style.left = '-10000px'
+  measuringFlow.style.top = '0'
+  measuringFlow.style.width = `${width}px`
+  measuringFlow.style.maxWidth = `${width}px`
+  measuringFlow.style.height = 'auto'
+  measuringFlow.style.visibility = 'hidden'
+  measuringFlow.style.pointerEvents = 'none'
+  measuringFlow.style.columnWidth = 'auto'
+  measuringFlow.style.columnGap = 'normal'
+  measuringFlow.style.transform = 'none'
+  measuringFlow.style.transition = 'none'
+  document.body.appendChild(measuringFlow)
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  const contentHeight = measuringFlow.scrollHeight
+  measuringFlow.remove()
+
+  const nextCount = Math.max(1, Math.ceil(contentHeight / height))
+  const ratio = targetRatio ?? currentReadingRatio()
+  pageCount.value = nextCount
+  pageIndex.value = Math.max(0, Math.min(nextCount - 1, Math.round(clampScrollRatio(ratio) * (nextCount - 1))))
+  prepareAdjacentPages()
+}
+
+function schedulePageRecalculation(targetRatio: number | null = null) {
+  if (!isPageMode.value) return
+  const token = ++pageRecalculationToken
+  ;[80, 240, 520].forEach((delay) => {
+    window.setTimeout(() => {
+      if (token === pageRecalculationToken && isPageMode.value) recalculatePages(targetRatio)
+    }, delay)
+  })
+}
+
+function prevPageOrChapter() {
+  if (!isPageMode.value) {
+    prevChapter()
+    return
+  }
+  if (pageIndex.value > 0) {
+    prepareAdjacentPages()
+    setPageIndex(pageIndex.value - 1)
+    return
+  }
+  turnToAdjacentChapterPage('prev')
+}
+
+function nextPageOrChapter() {
+  if (!isPageMode.value) {
+    nextChapter()
+    return
+  }
+  if (pageIndex.value < pageCount.value - 1) {
+    prepareAdjacentPages()
+    setPageIndex(pageIndex.value + 1)
+    return
+  }
+  turnToAdjacentChapterPage('next')
+}
+
+function handleReaderScroll() {
+  if (readerMenuOpen.value) {
+    if (ignoreNextScrollMenuClose.value) {
+      return
+    }
+    readerMenuOpen.value = false
+  }
+  saveCurrentPosition()
+}
+
+function handleReaderResize() {
+  if (isPageMode.value) recalculatePages(currentReadingRatio())
+}
+
+function handleReaderAssetLoad() {
+  if (isPageMode.value) recalculatePages(currentReadingRatio())
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden') saveCurrentPosition(true)
+}
+
+async function loadChapter(chapterId: number, options: { resetScroll?: boolean; restoreScrollRatio?: number | null; saveProgress?: boolean } = {}) {
+  const { resetScroll = true, restoreScrollRatio = null, saveProgress = true } = options
+  const chapter = fallbackReadableChapterFrom(chapterId)
+  if (!chapter) return
+  pageRecalculationToken += 1
+  clearPreparedAdjacentPages()
+  reader.activeChapterId = chapter.id
+  const content = await reader.loadChapterContent(bookId, chapter.id)
+  activeContentType.value = content.content_type
+  activeContent.value = content.content
+  if (isPageMode.value) {
+    await scrollReaderToTop()
+    await recalculatePages(restoreScrollRatio ?? 0)
+    schedulePageRecalculation(restoreScrollRatio ?? 0)
+  } else if (restoreScrollRatio !== null) {
+    await scrollReaderToRatio(restoreScrollRatio)
+  } else if (resetScroll) {
+    await scrollReaderToTop()
+  }
+  if (saveProgress) saveCurrentPosition(true)
+}
+
+async function turnToAdjacentChapterPage(direction: 'prev' | 'next') {
+  if (crossChapterPageTurn.value || !isPageMode.value || !reader.activeChapterId || !activeContent.value) return
+
+  const currentIndex = chapterIndexById(reader.activeChapterId)
+  const targetIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1
+  const currentChapter = activeChapter.value
+  const targetChapter = readableChapters.value[targetIndex]
+  if (!currentChapter || !targetChapter) return
+
+  if (!pageWidth.value || !pageHeight.value) {
+    await recalculatePages(currentReadingRatio())
+  }
+
+  let prepared = preparedAdjacentPages.value[direction]
+  if (prepared?.chapterId !== targetChapter.id) {
+    const targetContent = await reader.loadChapterContent(bookId, targetChapter.id)
+    prepared = {
+      chapterId: targetChapter.id,
+      content: targetContent,
+      pageCount: await measureChapterPageCount(targetChapter, targetContent)
+    }
+  }
+  const targetContent = prepared.content
+  const targetPageCount = prepared.pageCount
+  const targetPageIndex = direction === 'next' ? 0 : targetPageCount - 1
+  const initialOffset = direction === 'next' ? 0 : -pageDistance.value
+  const finalOffset = direction === 'next' ? -pageDistance.value : 0
+
+  crossChapterPageTurn.value = {
+    direction,
+    current: {
+      chapterId: currentChapter.id,
+      chapterTitle: currentChapter.title,
+      contentType: activeContentType.value,
+      content: activeContent.value,
+      pageIndex: pageIndex.value,
+      pageCount: pageCount.value
+    },
+    target: {
+      chapterId: targetChapter.id,
+      chapterTitle: targetChapter.title,
+      contentType: targetContent.content_type,
+      content: targetContent.content,
+      pageIndex: targetPageIndex,
+      pageCount: targetPageCount
+    },
+    offset: initialOffset,
+    animated: false
+  }
+
+  await nextTick()
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      if (crossChapterPageTurn.value) {
+        crossChapterPageTurn.value.animated = true
+        crossChapterPageTurn.value.offset = finalOffset
+      }
+      resolve()
+    })
+  })
+  await waitForCrossChapterPageTurn()
+
+  pageRecalculationToken += 1
+  clearPreparedAdjacentPages()
+  reader.activeChapterId = targetChapter.id
+  activeContentType.value = targetContent.content_type
+  activeContent.value = targetContent.content
+  pageCount.value = targetPageCount
+  pageIndex.value = targetPageIndex
+  crossChapterPageTurn.value = null
+  await scrollReaderToTop()
+  pageIndex.value = targetPageIndex
+  const targetRatio = targetPageCount <= 1 ? 0 : targetPageIndex / (targetPageCount - 1)
+  window.setTimeout(() => schedulePageRecalculation(targetRatio), 180)
+  prepareAdjacentPages()
+  saveCurrentPosition(true)
+}
+
+onMounted(async () => {
+  try {
+    reader.clearReaderState()
+    await Promise.all([reader.loadMeta(bookId), reader.loadChapters(bookId), reader.loadProgress(bookId)])
+    const savedPosition = savedReadablePosition()
+    const initialChapterId = savedPosition?.chapterId || readableChapters.value[0]?.id
+    if (initialChapterId) {
+      isRestoringPosition.value = true
+      await loadChapter(initialChapterId, { restoreScrollRatio: savedPosition?.scrollRatio ?? null, saveProgress: false })
+      isRestoringPosition.value = false
+    }
+    window.addEventListener('scroll', handleReaderScroll, { passive: true })
+    window.addEventListener('resize', handleReaderResize, { passive: true })
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+  } catch (error) {
+    isRestoringPosition.value = false
+    message.error(error instanceof Error ? error.message : '阅读器加载失败')
+  }
+})
+
+onBeforeUnmount(() => {
+  saveCurrentPosition(true)
+  window.removeEventListener('scroll', handleReaderScroll)
+  window.removeEventListener('resize', handleReaderResize)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
+
+watch(
+  () => settings.reader,
+  () => {
+    document.documentElement.style.setProperty('--reader-font-size', `${settings.reader.font_size}px`)
+    document.documentElement.style.setProperty('--reader-line-height', String(settings.reader.line_height))
+    document.documentElement.style.setProperty('--reader-content-width', settings.reader.content_width > 0 ? `${settings.reader.content_width}px` : '100%')
+    if (isPageMode.value) recalculatePages(currentReadingRatio())
+  },
+  { deep: true, immediate: true }
+)
+
+watch(
+  () => settings.reader.reading_mode,
+  async (mode, previousMode) => {
+    const ratio = previousMode === 'page' && pageCount.value > 1 ? pageIndex.value / (pageCount.value - 1) : currentScrollRatio()
+    if (mode === 'page') {
+      await scrollReaderToTop()
+      await recalculatePages(ratio)
+    prepareAdjacentPages()
+      schedulePageRecalculation(ratio)
+    } else {
+      pageCount.value = 1
+      pageIndex.value = 0
+      crossChapterPageTurn.value = null
+      if (previousMode === 'page') await scrollReaderToRatio(ratio)
+    }
+  }
+)
+
+watch(chapterDrawer, (visible) => {
+  if (visible) scrollActiveChapterIntoView()
+})
+
+watch(
+  () => reader.activeChapterId,
+  () => {
+    if (chapterDrawer.value) scrollActiveChapterIntoView()
+  }
+)
+
+watch([pageIndex, pageCount, isPageMode], () => {
+  prepareAdjacentPages()
+})
+</script>
+
+<template>
+  <main class="reader-shell">
+    <section v-if="reader.bookMeta" class="page reader-page" :class="{ 'is-page-mode': isPageMode }">
+      <section ref="readerTopRef" class="reader-panel surface" :class="{ 'is-fluid': settings.reader.content_width <= 0, 'is-page-mode': isPageMode }">
+        <div v-if="activeContent" ref="pageViewportRef" class="reader-page-viewport">
+          <div ref="pageFlowRef" class="reader-page-flow" :class="{ 'is-turning': crossChapterPageTurn }" :style="pageFlowStyle" @load.capture="handleReaderAssetLoad">
+            <h2 v-if="activeChapter && activeContentType !== 'html'" class="reader-chapter-title">{{ activeChapter.title }}</h2>
+            <div v-if="activeContentType === 'html'" class="reader-content" v-html="activeContent" />
+            <div v-else class="reader-content reader-content-text" v-text="activeContent" />
+          </div>
+          <div v-if="crossChapterPageTurn" class="reader-cross-page-track" :style="crossChapterTrackStyle">
+            <div v-for="pane in crossChapterPanes" :key="pane.chapterId" class="reader-cross-page-pane">
+              <div class="reader-page-flow reader-cross-page-flow" :style="pageTurnFlowStyle(pane)">
+                <h2 v-if="pane.contentType !== 'html'" class="reader-chapter-title">{{ pane.chapterTitle }}</h2>
+                <div v-if="pane.contentType === 'html'" class="reader-content" v-html="pane.content" />
+                <div v-else class="reader-content reader-content-text" v-text="pane.content" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-if="activeContent && isPageMode" class="reader-page-indicator">{{ pageIndex + 1 }} / {{ pageCount }}</div>
+        <div v-if="activeContent" class="reader-tap-zones">
+          <button type="button" class="reader-tap-zone" :aria-label="isPageMode ? '点击左侧切换上一页' : '点击左侧切换上一章'" :disabled="!isPageMode && chapterIndexById(reader.activeChapterId) <= 0 && !readerMenuOpen" @click="handleReaderTap(prevPageOrChapter)" />
+          <button type="button" class="reader-tap-zone" aria-label="点击中间打开或关闭阅读菜单" @click="handleReaderTap(openReaderMenu)" />
+          <button
+            type="button"
+            class="reader-tap-zone"
+            :aria-label="isPageMode ? '点击右侧切换下一页' : '点击右侧切换下一章'"
+            :disabled="!isPageMode && (chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1) && !readerMenuOpen"
+            @click="handleReaderTap(nextPageOrChapter)"
+          />
+        </div>
+        <EmptyState v-else title="暂无章节内容" description="后端未返回正文时可重试加载。">
+          <n-button secondary @click="reader.loadChapters(bookId)">重试</n-button>
+        </EmptyState>
+      </section>
+      <div class="reader-bottom toolbar" :class="{ 'is-fluid': settings.reader.content_width <= 0 }">
+        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="prevChapterFromStart()">
+          <template #icon><ChevronLeft :size="16" /></template>
+          上一章
+        </n-button>
+        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="nextChapterFromStart()">
+          <template #icon><ChevronRight :size="16" /></template>
+          下一章
+        </n-button>
+      </div>
+    </section>
+    <EmptyState v-else title="阅读器未加载" description="请返回书架后重新进入。">
+      <n-button @click="$router.push('/bookshelf')">返回书架</n-button>
+    </EmptyState>
+  </main>
+
+  <n-drawer v-model:show="chapterDrawer" placement="left" :width="320">
+    <n-drawer-content title="目录">
+      <div class="chapter-list">
+        <button
+          v-for="chapter in reader.chapters"
+          :key="chapter.id"
+          :ref="(element) => setChapterItemRef(chapter.id, element as Element | null)"
+          type="button"
+          class="chapter-item"
+          :class="{ active: chapter.id === reader.activeChapterId, volume: chapter.is_volume }"
+          :disabled="chapter.is_volume"
+          :aria-current="chapter.id === reader.activeChapterId ? 'true' : undefined"
+          @click="chapterDrawer = false; loadChapter(chapter.id)"
+        >
+          <span>{{ chapter.title }}</span>
+          <small v-if="chapter.is_volume">卷</small>
+        </button>
+      </div>
+    </n-drawer-content>
+  </n-drawer>
+
+  <n-drawer v-model:show="settingsDrawer" placement="right" :width="320">
+    <n-drawer-content title="阅读设置">
+      <div class="settings-panel">
+        <n-radio-group v-model:value="settings.reader.theme" @update:value="updateTheme">
+          <n-space vertical>
+            <n-radio value="modern">现代</n-radio>
+            <n-radio value="sepia">纸页</n-radio>
+            <n-radio value="dark">深色</n-radio>
+          </n-space>
+        </n-radio-group>
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>阅读模式</span>
+          </div>
+          <n-radio-group v-model:value="settings.reader.reading_mode" @update:value="updateReadingMode">
+            <n-space>
+              <n-radio value="scroll">滚动</n-radio>
+              <n-radio value="page">分页</n-radio>
+            </n-space>
+          </n-radio-group>
+        </div>
+        <n-slider v-model:value="settings.reader.font_size" :min="14" :max="26" :step="1" :tooltip="false" @update:value="updateFontSize" />
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>阅读宽度</span>
+          </div>
+          <n-slider v-model:value="settings.reader.content_width" :min="0" :max="1180" :step="20" :tooltip="false" @update:value="updateContentWidth" />
+          <div class="width-presets">
+            <n-button size="small" secondary @click="updateContentWidth(640)">窄</n-button>
+            <n-button size="small" secondary @click="updateContentWidth(760)">适中</n-button>
+            <n-button size="small" secondary @click="updateContentWidth(920)">宽</n-button>
+            <n-button size="small" secondary @click="updateContentWidth(0)">铺满</n-button>
+          </div>
+        </div>
+        <n-select
+          v-model:value="settings.reader.line_height"
+          :options="[
+            { label: '紧凑 1.5', value: 1.5 },
+            { label: '适中 1.8', value: 1.8 },
+            { label: '宽松 2.2', value: 2.2 }
+          ]"
+          @update:value="updateLineHeight"
+        />
+      </div>
+    </n-drawer-content>
+  </n-drawer>
+
+  <Transition name="reader-menu-slide">
+    <div v-if="readerMenuOpen" class="reader-menu-layer">
+      <section class="reader-status-bar">
+        <n-button circle secondary title="退出阅读" aria-label="退出阅读" @click="exitReader">
+          <template #icon><ArrowLeft :size="18" /></template>
+        </n-button>
+        <div class="reader-status-title">{{ activeChapter?.title || reader.bookMeta?.title || '正在阅读' }}</div>
+        <n-button circle secondary title="阅读设置" aria-label="阅读设置" @click="settingsDrawer = true">
+          <template #icon><Settings2 :size="18" /></template>
+        </n-button>
+      </section>
+      <section class="reader-menu">
+        <div class="reader-menu-actions">
+          <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="runWithMenuKept(prevChapterFromStart)">
+            <template #icon><ChevronLeft :size="16" /></template>
+            上一章
+          </n-button>
+          <n-button secondary @click="openChapterDrawer()">
+            <template #icon><List :size="16" /></template>
+            目录
+          </n-button>
+          <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="runWithMenuKept(nextChapterFromStart)">
+            <template #icon><ChevronRight :size="16" /></template>
+            下一章
+          </n-button>
+        </div>
+      </section>
+    </div>
+  </Transition>
+</template>
+
+<style scoped>
+.reader-page {
+  display: grid;
+  min-height: calc(100vh - 56px);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.reader-page.is-page-mode {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.reader-panel,
+.reader-bottom {
+  padding: 14px;
+}
+
+.reader-panel,
+.reader-bottom {
+  width: min(var(--reader-content-width, 760px), 100%);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.reader-panel.is-fluid,
+.reader-bottom.is-fluid {
+  width: 100%;
+}
+
+.reader-panel {
+  position: relative;
+  max-width: 100%;
+  overflow: hidden;
+  min-height: 54vh;
+}
+
+.reader-panel.is-page-mode {
+  height: auto;
+  min-height: 0;
+  padding: 0;
+}
+
+.reader-page-viewport {
+  position: relative;
+  max-width: 100%;
+}
+
+.reader-panel.is-page-mode .reader-page-viewport {
+  height: 100%;
+  overflow: hidden;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.reader-page-flow {
+  max-width: 100%;
+}
+
+.reader-panel.is-page-mode .reader-page-flow {
+  width: var(--reader-page-width, 100%);
+  height: var(--reader-page-height, 100%);
+  column-width: var(--reader-page-width, 100%);
+  column-gap: var(--reader-page-gap, 32px);
+  transition: transform 0.16s ease;
+  will-change: transform;
+}
+
+.reader-panel.is-page-mode .reader-page-flow.is-turning {
+  visibility: hidden;
+}
+
+.reader-cross-page-track {
+  position: absolute;
+  inset: 24px;
+  z-index: 2;
+  display: flex;
+  gap: var(--reader-page-gap, 32px);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.reader-cross-page-pane {
+  position: relative;
+  width: var(--reader-page-width, 100%);
+  height: var(--reader-page-height, 100%);
+  flex: 0 0 var(--reader-page-width, 100%);
+  overflow: hidden;
+}
+
+.reader-panel.is-page-mode .reader-cross-page-flow {
+  transition: none;
+}
+
+.reader-panel.is-page-mode .reader-content {
+  overflow: visible;
+}
+
+.reader-chapter-title {
+  margin: 0 0 1.25em;
+  color: var(--color-text-main);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.reader-content-text {
+  max-width: 100%;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}
+
+.reader-page-indicator {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 2;
+  padding: 3px 8px;
+  color: var(--color-text-sec);
+  background: color-mix(in srgb, var(--color-bg-card) 88%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.reader-tap-zones {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  pointer-events: none;
+}
+
+.reader-tap-zone {
+  min-width: 0;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  pointer-events: auto;
+  touch-action: pan-y;
+}
+
+.reader-bottom {
+  justify-content: center;
+  align-self: end;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.reader-menu-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.reader-status-bar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--color-bg-card) 94%, transparent);
+  border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
+}
+
+.reader-status-title {
+  min-width: 0;
+  color: var(--color-text-main);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-menu {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  padding: 10px max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--color-bg-card) 94%, transparent);
+  border-top: 1px solid var(--color-border);
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
+}
+
+.reader-menu-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(720px, 100%);
+  margin: 0 auto;
+}
+
+.reader-menu-slide-enter-active,
+.reader-menu-slide-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.reader-menu-slide-enter-from,
+.reader-menu-slide-leave-to {
+  opacity: 0;
+  transform: translateY(18px);
+}
+
+@media (max-width: 560px) {
+  .reader-panel.is-page-mode {
+    min-height: 360px;
+  }
+
+  .reader-panel.is-page-mode .reader-page-viewport {
+    padding: 18px;
+  }
+
+  .reader-menu-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.chapter-list {
+  display: grid;
+  gap: 6px;
+}
+
+.chapter-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: var(--color-text-main);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  text-align: left;
+}
+
+.chapter-item.active {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: var(--color-primary-suppl);
+  box-shadow: 0 0 0 1px rgba(24, 160, 88, 0.12);
+  font-weight: 700;
+}
+
+.chapter-item.volume {
+  cursor: default;
+  opacity: 0.74;
+}
+
+.settings-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.setting-group {
+  display: grid;
+  gap: 8px;
+}
+
+.setting-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-text-sec);
+  font-size: 13px;
+}
+
+.setting-label strong {
+  color: var(--color-text-main);
+}
+
+.width-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+</style>
