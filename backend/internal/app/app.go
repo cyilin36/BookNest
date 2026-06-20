@@ -55,6 +55,8 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	api.GET("/system/info", s.systemInfo)
 	api.GET("/system/icon", s.systemIcon)
 	api.HEAD("/system/icon", s.systemIcon)
+	api.GET("/system/login-background", s.loginBackground)
+	api.HEAD("/system/login-background", s.loginBackground)
 	api.GET("/reader/books/:bookId/resources", s.readerResource)
 
 	api.POST("/auth/register", s.register)
@@ -129,6 +131,8 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	admin.PUT("/system/settings", s.adminUpdateSettings)
 	admin.POST("/system/icon", middleware.BodyLimit(3*1024*1024), s.adminUploadSystemIcon)
 	admin.DELETE("/system/icon", s.adminDeleteSystemIcon)
+	admin.POST("/system/login-background", middleware.BodyLimit(10*1024*1024), s.adminUploadLoginBackground)
+	admin.DELETE("/system/login-background", s.adminDeleteLoginBackground)
 
 	r.NoRoute(s.serveFrontend)
 }
@@ -151,11 +155,26 @@ func (s *Server) systemIcon(c *gin.Context) {
 	c.File(path)
 }
 
+func (s *Server) loginBackground(c *gin.Context) {
+	rel := s.systemSettingValue("login_background_path")
+	if rel == "" {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+	path, err := s.store.AssetPath(rel)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+	c.File(path)
+}
+
 func (s *Server) systemInfo(c *gin.Context) {
 	settings := s.loadSettings()
 	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{
 		"site_name":                     settings.SiteName,
 		"site_icon_url":                 settings.SiteIconURL,
+		"login_background_url":          settings.LoginBackgroundURL,
 		"allow_registration":            settings.AllowRegistration,
 		"library_review_required":       settings.LibraryReviewRequired,
 		"supported_formats":             []string{model.BookFormatEPUB, model.BookFormatPDF, model.BookFormatTXT},
@@ -483,6 +502,8 @@ func (s *Server) loadSettingsTx(tx *gorm.DB) SystemSettings {
 			settings.SiteName = row.Value
 		case "site_icon_path":
 			settings.SiteIconURL = siteIconURL(row.Value)
+		case "login_background_path":
+			settings.LoginBackgroundURL = loginBackgroundURL(row.Value)
 		case "allow_registration":
 			settings.AllowRegistration = row.Value == "true"
 		case "library_review_required":
@@ -658,6 +679,14 @@ func siteIconURL(iconPath string) *string {
 		return nil
 	}
 	v := "/api/v1/system/icon"
+	return &v
+}
+
+func loginBackgroundURL(backgroundPath string) *string {
+	if strings.TrimSpace(backgroundPath) == "" {
+		return nil
+	}
+	v := "/api/v1/system/login-background"
 	return &v
 }
 

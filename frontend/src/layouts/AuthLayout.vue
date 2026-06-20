@@ -1,13 +1,28 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { RouterView } from 'vue-router'
 import SiteBrandMark from '@/components/common/SiteBrandMark.vue'
 import { useSystemStore } from '@/stores/system'
 
 const system = useSystemStore()
+
+const backgroundStyle = computed(() => {
+  if (system.loginBackgroundSrc) {
+    return {
+      backgroundImage: `url(${system.loginBackgroundSrc})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat'
+    }
+  }
+  return {
+    background: 'linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%)'
+  }
+})
 </script>
 
 <template>
-  <main class="auth-layout">
+  <main class="auth-layout" :style="backgroundStyle">
     <section class="auth-panel surface">
       <div class="brand">
         <SiteBrandMark :size="48" />
@@ -27,7 +42,6 @@ const system = useSystemStore()
   min-height: 100vh;
   place-items: center;
   padding: var(--spacing-3xl);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .auth-panel {
@@ -35,7 +49,7 @@ const system = useSystemStore()
   padding: var(--spacing-4xl);
   background: var(--color-bg-card);
   border-radius: var(--radius-xlarge);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
 }
 
 .brand {

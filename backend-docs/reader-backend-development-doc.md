@@ -1558,11 +1558,16 @@ DELETE /api/v1/admin/system/icon
 
 管理员可通过 `POST /admin/system/icon` 上传站点图标，通过 `DELETE /admin/system/icon` 删除自定义图标。
 
+管理员可通过 `POST /admin/system/login-background` 上传登录页背景图片，通过 `DELETE /admin/system/login-background` 删除登录页背景。
+
 规则：
 
 - 设置修改立即生效。
 - 站点图标保存到 `ASSETS_DIR`，默认位于 `DATA_DIR/assets`。`/system/icon` 匿名读取当前图标文件，未设置时返回 `not_found`。
 - 站点图标支持 `png`、`jpg/jpeg`、`webp`、`svg`、`ico`，最大 2MB；上传成功后替换旧文件并写入 `system_settings.site_icon_path`。
+- 登录页背景保存到 `ASSETS_DIR/site/login-background{ext}`。`/system/login-background` 匿名读取当前背景图片文件，未设置时返回 `not_found`。
+- 登录页背景支持 `png`、`jpg/jpeg`、`webp`、`gif`，最大 10MB；上传成功后替换旧文件并写入 `system_settings.login_background_path`。
+- 登录页背景为匿名访问接口，便于登录页在未认证状态下直接展示背景。
 - `max_upload_size_mb` 不能超过启动时 `REQUEST_BODY_LIMIT_MB`。
 - `library_review_required` 保留用于兼容旧配置，当前不影响公共图书上传状态。
 - 存储统计第一期可基于数据库 `file_size` 汇总，目录真实占用后续增强。
@@ -1572,6 +1577,8 @@ DELETE /api/v1/admin/system/icon
 ```text
 /api/v1/health
 /api/v1/system/info
+/api/v1/system/icon
+/api/v1/system/login-background
 
 /api/v1/auth/register
 /api/v1/auth/login
@@ -1629,6 +1636,7 @@ DELETE /api/v1/admin/users/:id
 /api/v1/admin/system/storage
 /api/v1/admin/system/settings
 /api/v1/admin/system/icon
+/api/v1/admin/system/login-background
 ```
 
 前端静态资源：
@@ -1643,6 +1651,9 @@ DELETE /api/v1/admin/users/:id
 能力                           匿名  普通用户  管理员
 注册                           是    是        是
 登录                           是    是        是
+获取系统信息                   是    是        是
+获取站点图标                   是    是        是
+获取登录页背景                 是    是        是
 查看自己的信息                 否    是        是
 修改自己的信息                 否    是        是
 上传私有图书                   否    是        是
@@ -1663,6 +1674,8 @@ DELETE /api/v1/admin/users/:id
 管理系统分类                   否    否        是
 管理系统标签                   否    否        是
 管理系统设置                   否    否        是
+上传/删除站点图标              否    否        是
+上传/删除登录页背景            否    否        是
 ```
 
 ## 21. 事务边界

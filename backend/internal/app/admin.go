@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -668,6 +669,106 @@ func (s *Server) adminDeleteSystemIcon(c *gin.Context) {
 		return
 	}
 	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{"site_icon_url": nil})
+}
+
+func (s *Server) adminUploadLoginBackground(c *gin.Context) {
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
+		return
+	}
+	defer file.Close()
+	ext, contentType, ok := loginBackgroundFormat(header.Filename, header.Header.Get("Content-Type"))
+	if !ok {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrInvalidImageFormat)
+		return
+	}
+	sniff := make([]byte, 512)
+	n, readErr := file.Read(sniff)
+	if readErr != nil && n == 0 {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrInvalidImageFormat)
+		return
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if !validLoginBackgroundBytes(ext, sniff[:n]) {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrInvalidImageFormat)
+		return
+	}
+
+	rel, err := s.store.SaveLoginBackground(file, ext)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+
+	oldPath := s.systemSettingValue("login_background_path")
+	if err := s.saveSystemSetting("login_background_path", rel); err != nil {
+		_ = s.removeAssetFile(rel)
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	if oldPath != "" && oldPath != rel {
+		_ = s.removeAssetFile(oldPath)
+	}
+
+	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{"login_background_url": loginBackgroundURL(rel), "content_type": contentType})
+}
+
+func (s *Server) adminDeleteLoginBackground(c *gin.Context) {
+	oldPath := s.systemSettingValue("login_background_path")
+	if oldPath != "" {
+		if err := s.removeAssetFile(oldPath); err != nil && !os.IsNotExist(err) {
+			common.RespondError(c, middleware.GetRequestID(c), err)
+			return
+		}
+	}
+	if err := s.db.Delete(&model.SystemSetting{}, "key = ?", "login_background_path").Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{"login_background_url": nil})
+}
+
+func loginBackgroundFormat(filename, contentTypeValue string) (string, string, bool) {
+	ext := strings.ToLower(filepath.Ext(filename))
+	normalizedContentType := strings.ToLower(strings.TrimSpace(strings.Split(contentTypeValue, ";")[0]))
+	formats := map[string]string{
+		".png":  "image/png",
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".webp": "image/webp",
+		".gif":  "image/gif",
+	}
+	if ct, ok := formats[ext]; ok {
+		return ext, ct, true
+	}
+	for allowedExt, allowedContentType := range formats {
+		if normalizedContentType == allowedContentType {
+			return allowedExt, allowedContentType, true
+		}
+	}
+	return "", "", false
+}
+
+func validLoginBackgroundBytes(ext string, data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	switch ext {
+	case ".png":
+		return http.DetectContentType(data) == "image/png"
+	case ".jpg", ".jpeg":
+		return http.DetectContentType(data) == "image/jpeg"
+	case ".gif":
+		return http.DetectContentType(data) == "image/gif"
+	case ".webp":
+		return len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP"
+	default:
+		return false
+	}
 }
 
 func (s *Server) hasCategoryAssociations(categoryID int64) bool {

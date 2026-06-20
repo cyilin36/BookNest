@@ -23,9 +23,10 @@ frontend/
 - 私有/公共图书上传，支持上传时附带封面。
 - 分类和标签读取、上传选择、列表筛选。
 - 阅读器基础能力：元数据、目录、章节正文、章节切换、阅读设置、进度保存。
-- 管理后台：概览、用户管理、公共图书管理、分类管理、标签管理、系统设置。
+- 管理后台：概览、用户管理、公共图书管理、分类管理、标签管理、系统设置（包括站点图标和登录页背景上传）。
 - 三套主题：Modern、Sepia、Dark。
 - 受保护封面图片前端鉴权加载。
+- 登录页自定义背景图片支持。
 
 当前未完成或后续增强：
 
@@ -156,13 +157,16 @@ frontend/src/api/
 
 ```http
 GET /api/v1/system/info
+GET /api/v1/system/login-background
 GET /api/v1/admin/system/settings
 PUT /api/v1/admin/system/settings
 POST /api/v1/admin/system/icon
 DELETE /api/v1/admin/system/icon
+POST /api/v1/admin/system/login-background
+DELETE /api/v1/admin/system/login-background
 ```
 
-站点图标通过 `site_icon_url` 在 `GET /api/v1/system/info` 返回；管理员上传/删除图标必须走独立图标接口，不能把 `site_icon_url` 作为系统设置修改字段提交。
+站点图标和登录页背景通过 `site_icon_url` 和 `login_background_url` 在 `GET /api/v1/system/info` 返回；管理员上传/删除图标和背景必须走独立接口，不能把这些 URL 作为系统设置修改字段提交。
 
 阅读器依赖接口：
 
@@ -544,6 +548,7 @@ frontend/src/stores/system.ts
 
 - 站点名称
 - 站点图标地址和缓存刷新版本
+- 登录页背景地址和缓存刷新版本
 - 注册开关
 - 公共图书审核开关
 - 支持上传格式
@@ -556,6 +561,15 @@ frontend/src/stores/system.ts
 - 后端未配置图标或图标加载失败时，回退显示 `BN`。
 - 上传或删除站点图标后，前端需要刷新 `system` store 并同步浏览器 favicon。
 - 管理员上传站点图标前需要做前端校验，格式仅允许 PNG/JPG/WEBP/SVG/ICO，大小最大 2MB；格式或大小不符合时必须给明确错误提示。
+
+登录页背景：
+
+- 登录页背景使用 `AuthLayout.vue` 动态渲染。
+- 后端已配置背景时，使用 `background-image` 覆盖整个登录页面（cover 模式）。
+- 后端未配置背景时，显示默认浅蓝色渐变 `linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%)`。
+- 上传或删除登录页背景后，前端需要刷新 `system` store 更新背景 URL 和版本号。
+- 管理员上传登录页背景前需要做前端校验，格式仅允许 PNG/JPG/WEBP/GIF，大小最大 10MB；格式或大小不符合时必须给明确错误提示。
+- 背景图片通过 `GET /api/v1/system/login-background` 匿名访问（无需认证）。
 
 ## 10. 页面说明
 
@@ -574,6 +588,7 @@ frontend/src/views/auth/
 - 注册前校验密码至少 6 位，避免只展示后端泛化的校验失败提示。
 - 登录后跳转 redirect 或 `/bookshelf`
 - 注册后进入书架
+- 动态背景：管理员配置的登录页背景图片或默认浅蓝色渐变
 
 ### 我的书架
 
@@ -726,7 +741,7 @@ frontend/src/views/admin/
 - 公共图书筛选、`approved`/`hidden` 状态流转、真正删除；筛选条件由右上角搜索图标打开抽屉操作，状态流转使用直接操作按钮，删除使用独立按钮。
 - 分类新增、编辑、删除
 - 标签新增、编辑、删除
-- 系统设置编辑，包括站点名称、站点图标上传/删除、注册开关、图书馆审核和上传限制。
+- 系统设置编辑，包括站点名称、站点图标上传/删除、登录页背景上传/删除、注册开关、图书馆审核和上传限制。
 
 ## 11. 视觉和响应式
 

@@ -285,6 +285,8 @@ GET /api/v1/system/info
 ```ts
 interface SystemInfo {
   site_name: string
+  site_icon_url: string | null
+  login_background_url: string | null
   allow_registration: boolean
   library_review_required: boolean
   supported_formats: BookFormat[]
@@ -292,6 +294,35 @@ interface SystemInfo {
   default_user_storage_quota_mb: number
 }
 ```
+
+`site_icon_url` 为站点图标地址，未配置时为 `null`。`login_background_url` 为登录页背景图地址，未配置时为 `null`。两者均为不透明的后端文件流地址，前端直接当作图片 URL 使用。
+
+### 站点图标文件流
+
+```http
+GET /api/v1/system/icon
+HEAD /api/v1/system/icon
+```
+
+权限：匿名。
+
+响应：站点图标原始字节和正确 `Content-Type`。未配置图标时返回 `404 not_found`。
+
+### 登录页背景文件流
+
+```http
+GET /api/v1/system/login-background
+HEAD /api/v1/system/login-background
+```
+
+权限：匿名。
+
+响应：登录页背景图片原始字节和正确 `Content-Type`。未配置背景时返回 `404 not_found`。
+
+规则：
+
+- 该接口为匿名访问，便于登录页在未认证状态下直接展示背景。
+- 仅返回当前配置的单张背景图，由管理员通过后台上传或删除。
 
 ## 7. 认证接口
 
@@ -1162,6 +1193,8 @@ GET /api/v1/admin/system/settings
 ```ts
 interface SystemSettings {
   site_name: string
+  site_icon_url: string | null
+  login_background_url: string | null
   allow_registration: boolean
   library_review_required: boolean
   max_upload_size_mb: number
@@ -1185,6 +1218,61 @@ PUT /api/v1/admin/system/settings
 
 - `max_upload_size_mb` 不能超过启动时 `REQUEST_BODY_LIMIT_MB`。
 - `library_review_required` 保留用于兼容旧配置，当前不影响公共图书上传状态。
+- `site_icon_url` 和 `login_background_url` 为只读字段，通过专用接口上传和删除。
+
+### 上传登录页背景
+
+```http
+POST /api/v1/admin/system/login-background
+```
+
+权限：管理员。
+
+请求：`multipart/form-data`。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| file | file | 是 | 背景图片文件 |
+
+响应：
+
+```ts
+interface LoginBackgroundUploadResponse {
+  login_background_url: string
+  content_type: string
+}
+```
+
+规则：
+
+- 支持格式：PNG、JPEG、WebP、GIF。
+- 文件大小限制：10 MB。
+- 上传成功后会替换原有的登录页背景。
+- 旧背景文件会被自动删除。
+
+### 删除登录页背景
+
+```http
+DELETE /api/v1/admin/system/login-background
+```
+
+权限：管理员。
+
+响应：
+
+```json
+{
+  "data": {
+    "login_background_url": null
+  },
+  "request_id": "req_xxx"
+}
+```
+
+规则：
+
+- 删除后登录页将不显示背景图片（或使用前端默认样式）。
+- 删除操作同时删除服务器上的图片文件。
 
 ## 15. 错误码
 
