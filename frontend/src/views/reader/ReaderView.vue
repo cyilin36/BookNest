@@ -724,16 +724,6 @@ watch([pageIndex, pageCount, isPageMode], () => {
           <n-button secondary @click="reader.loadChapters(bookId)">重试</n-button>
         </EmptyState>
       </section>
-      <div v-if="!isPageMode" class="reader-bottom toolbar" :class="{ 'is-fluid': settings.reader.content_width <= 0 }">
-        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) <= 0" @click="prevChapterFromStart()">
-          <template #icon><ChevronLeft :size="16" /></template>
-          上一章
-        </n-button>
-        <n-button secondary :disabled="chapterIndexById(reader.activeChapterId) < 0 || chapterIndexById(reader.activeChapterId) >= readableChapters.length - 1" @click="nextChapterFromStart()">
-          <template #icon><ChevronRight :size="16" /></template>
-          下一章
-        </n-button>
-      </div>
     </section>
     <EmptyState v-else title="阅读器未加载" description="请返回书架后重新进入。">
       <n-button @click="$router.push('/bookshelf')">返回书架</n-button>
@@ -843,8 +833,8 @@ watch([pageIndex, pageCount, isPageMode], () => {
 .reader-page {
   display: grid;
   min-height: calc(100vh - 56px);
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
 }
 
 .reader-page.is-page-mode {
@@ -999,12 +989,6 @@ watch([pageIndex, pageCount, isPageMode], () => {
   border: 0;
   pointer-events: auto;
   touch-action: pan-y;
-}
-
-.reader-bottom {
-  justify-content: center;
-  align-self: end;
-  padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
 .reader-menu-layer {
