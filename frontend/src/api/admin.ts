@@ -1,5 +1,5 @@
 import { apiClient, unwrap, unwrapPage } from './client'
-import type { AdminStorageStats, BookFormat, LibraryStatus, PageQuery, SystemIconUploadResult, SystemSettings, UpdateSystemSettingsRequest } from './types'
+import type { AdminStorageStats, BookFormat, LibraryStatus, PageQuery, SystemIconUploadResult, LoginBackgroundUploadResult, SystemSettings, UpdateSystemSettingsRequest } from './types'
 import type { LibraryBook } from './types'
 
 export type AdminLibraryEditableStatus = Extract<LibraryStatus, 'approved' | 'hidden'>
@@ -38,5 +38,13 @@ export const adminApi = {
   },
   deleteSystemIcon() {
     return unwrap<{ site_icon_url: null }>(apiClient.delete('/admin/system/icon'))
+  },
+  uploadLoginBackground(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return unwrap<LoginBackgroundUploadResult>(apiClient.post('/admin/system/login-background', formData, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  },
+  deleteLoginBackground() {
+    return unwrap<{ login_background_url: null }>(apiClient.delete('/admin/system/login-background'))
   }
 }

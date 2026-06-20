@@ -66,6 +66,7 @@ type LibraryBookDTO struct {
 type SystemSettings struct {
 	SiteName                  string  `json:"site_name"`
 	SiteIconURL               *string `json:"site_icon_url"`
+	LoginBackgroundURL        *string `json:"login_background_url"`
 	AllowRegistration         bool    `json:"allow_registration"`
 	LibraryReviewRequired     bool    `json:"library_review_required"`
 	MaxUploadSizeMB           int     `json:"max_upload_size_mb"`

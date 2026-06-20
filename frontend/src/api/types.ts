@@ -70,6 +70,7 @@ export interface AuthSession {
 export interface SystemInfo {
   site_name: string
   site_icon_url: string | null
+  login_background_url: string | null
   allow_registration: boolean
   library_review_required: boolean
   supported_formats: BookFormat[]
@@ -80,17 +81,23 @@ export interface SystemInfo {
 export interface SystemSettings {
   site_name: string
   site_icon_url: string | null
+  login_background_url: string | null
   allow_registration: boolean
   library_review_required: boolean
   max_upload_size_mb: number
   default_user_storage_quota_mb: number
 }
 
-export type UpdateSystemSettingsRequest = Omit<SystemSettings, 'site_icon_url'>
+export type UpdateSystemSettingsRequest = Omit<SystemSettings, 'site_icon_url' | 'login_background_url'>
 
 export interface SystemIconUploadResult {
   site_icon_url: string
   content_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/svg+xml' | 'image/x-icon'
+}
+
+export interface LoginBackgroundUploadResult {
+  login_background_url: string
+  content_type: string
 }
 
 export interface BookMeta {

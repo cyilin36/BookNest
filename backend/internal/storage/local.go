@@ -161,6 +161,37 @@ func (s *Local) SaveSiteIcon(file multipart.File, ext string) (string, error) {
 	return rel, nil
 }
 
+func (s *Local) SaveLoginBackground(file multipart.File, ext string) (string, error) {
+	if strings.TrimSpace(ext) == "" {
+		ext = ".jpg"
+	}
+	rel := filepath.Join("site", "login-background"+ext)
+	abs := filepath.Join(s.cfg.AssetsDir, rel)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return "", err
+	}
+	tmpPath := filepath.Join(s.cfg.TempDir, uuid.NewString()+".login-bg")
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		return "", err
+	}
+	_, copyErr := io.Copy(out, file)
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", closeErr
+	}
+	if err := moveFile(tmpPath, abs); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", err
+	}
+	return rel, nil
+}
+
 func moveFile(src, dst string) error {
 	if err := os.Rename(src, dst); err == nil {
 		return nil

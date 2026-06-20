@@ -21,6 +21,8 @@ export const useSystemStore = defineStore('system', {
     siteName: 'BookNest',
     siteIconUrl: null as string | null,
     siteIconVersion: 0,
+    loginBackgroundUrl: null as string | null,
+    loginBackgroundVersion: 0,
     allowRegistration: true,
     libraryReviewRequired: false,
     supportedFormats: ['epub', 'pdf', 'txt'] as BookFormat[],
@@ -31,6 +33,9 @@ export const useSystemStore = defineStore('system', {
   getters: {
     siteIconSrc(state) {
       return state.siteIconUrl ? withCacheVersion(state.siteIconUrl, state.siteIconVersion) : ''
+    },
+    loginBackgroundSrc(state) {
+      return state.loginBackgroundUrl ? withCacheVersion(state.loginBackgroundUrl, state.loginBackgroundVersion) : null
     }
   },
   actions: {
@@ -40,6 +45,7 @@ export const useSystemStore = defineStore('system', {
     applySystemInfo(info: SystemInfo | SystemSettings) {
       this.siteName = info.site_name
       this.siteIconUrl = info.site_icon_url
+      this.loginBackgroundUrl = info.login_background_url
       this.allowRegistration = info.allow_registration
       this.libraryReviewRequired = info.library_review_required
       this.maxUploadSizeMb = info.max_upload_size_mb
@@ -53,6 +59,10 @@ export const useSystemStore = defineStore('system', {
       this.siteIconUrl = url
       this.siteIconVersion = Date.now()
       this.syncFavicon()
+    },
+    setLoginBackgroundUrl(url: string | null) {
+      this.loginBackgroundUrl = url
+      this.loginBackgroundVersion = Date.now()
     },
     async fetchSystemInfo() {
       this.loading = true
