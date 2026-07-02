@@ -60,6 +60,11 @@ const userDropdownOptions = computed(() => [
     key: 'd1'
   },
   {
+    label: '个人资料',
+    key: 'profile',
+    icon: () => h(User, { size: 18 })
+  },
+  {
     label: '退出登录',
     key: 'logout',
     icon: () => h(LogOut, { size: 18 })
@@ -73,6 +78,8 @@ function handleAdminSelect(key: string) {
 function handleUserSelect(key: string) {
   if (key === 'logout') {
     logout()
+  } else if (key === 'profile') {
+    router.push('/profile')
   }
 }
 </script>
@@ -108,7 +115,10 @@ function handleUserSelect(key: string) {
         <div class="navbar-right">
           <n-dropdown :options="userDropdownOptions" @select="handleUserSelect">
             <button class="user-button">
-              <div class="user-avatar">
+              <div v-if="auth.user?.avatar_url" class="user-avatar">
+                <img :src="`${auth.user.avatar_url}?t=${Date.now()}`" alt="用户头像" class="avatar-image" />
+              </div>
+              <div v-else class="user-avatar">
                 <User :size="20" />
               </div>
               <span class="user-name">{{ auth.user?.nickname || auth.user?.username }}</span>
@@ -283,6 +293,13 @@ function handleUserSelect(key: string) {
   border-radius: var(--radius-round);
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #ffffff;
+  overflow: hidden;
+}
+
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .user-name {

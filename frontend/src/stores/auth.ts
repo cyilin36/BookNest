@@ -78,6 +78,9 @@ export const useAuthStore = defineStore('auth', {
       } finally {
         this.clearAuth()
       }
+    },
+    updateUser(user: User) {
+      this.user = user
     }
   }
 })

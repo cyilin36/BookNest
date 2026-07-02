@@ -89,6 +89,7 @@ export interface User {
   username: string
   email: string | null
   nickname: string | null
+  avatar_url: string | null
   role: UserRole
   status: UserStatus
   storage_quota_bytes: number | null
@@ -459,6 +460,76 @@ interface ChangePasswordRequest {
 ```
 
 响应：`{}`。成功后撤销该用户全部 refresh token。
+
+### 上传自定义头像
+
+```http
+POST /api/v1/users/me/avatar/upload
+```
+
+权限：登录。
+
+请求类型：`multipart/form-data`。
+
+字段：
+
+```text
+file=<image file>
+```
+
+响应：`User`。
+
+规则：
+
+- 支持格式：PNG、JPEG、WebP、GIF。
+- 文件大小限制：5 MB。
+- 上传成功后会替换原有头像。
+- 旧的自定义头像文件会被自动删除（默认头像不会删除）。
+
+常见错误码：`avatar_format_not_supported`、`avatar_content_invalid`、`avatar_too_large`、`payload_too_large`。
+
+### 设置默认头像
+
+```http
+POST /api/v1/users/me/avatar/default
+```
+
+权限：登录。
+
+请求：
+
+```ts
+interface SetDefaultAvatarRequest {
+  avatar_name: string
+}
+```
+
+响应：`User`。
+
+规则：
+
+- `avatar_name` 必须是 `default1`、`default2`、`default3`、`default4`、`default5`、`default6` 之一。
+- 设置默认头像后，旧的自定义头像文件会被自动删除。
+
+常见错误码：`invalid_avatar_name`。
+
+### 获取用户头像
+
+```http
+GET /api/v1/users/:userId/avatar
+HEAD /api/v1/users/:userId/avatar
+```
+
+权限：登录。
+
+响应：头像图片原始字节和正确 `Content-Type`。未设置头像时返回 `404`。
+
+规则：
+
+- 可以获取任何用户的头像（包括自己和其他用户）。
+- 默认头像返回 SVG 格式。
+- 自定义头像返回上传时的原始格式。
+- 响应头包含 `Cache-Control: public, max-age=3600`。
 
 ## 9. 个人书架接口
 

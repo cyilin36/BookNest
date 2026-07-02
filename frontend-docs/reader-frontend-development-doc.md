@@ -27,6 +27,8 @@ frontend/
 - 三套主题：Modern、Sepia、Dark。
 - 受保护封面图片前端鉴权加载。
 - 登录页自定义背景图片支持。
+- 用户头像功能：支持上传自定义头像、选择默认头像，导航栏显示用户头像。
+- 个人资料管理：编辑昵称、邮箱，修改密码，查看存储空间占用。
 
 当前未完成或后续增强：
 
@@ -168,6 +170,17 @@ DELETE /api/v1/admin/system/login-background
 
 站点图标和登录页背景通过 `site_icon_url` 和 `login_background_url` 在 `GET /api/v1/system/info` 返回；管理员上传/删除图标和背景必须走独立接口，不能把这些 URL 作为系统设置修改字段提交。
 
+用户头像和个人资料接口：
+
+```http
+GET /api/v1/users/me
+PATCH /api/v1/users/me
+PATCH /api/v1/users/me/password
+POST /api/v1/users/me/avatar/upload
+POST /api/v1/users/me/avatar/default
+GET /api/v1/users/:userId/avatar
+```
+
 阅读器依赖接口：
 
 ```http
@@ -274,6 +287,7 @@ frontend/
         ReaderView.vue
       settings/
         SettingsView.vue
+        ProfileView.vue
       upload/
         UploadView.vue
 ```
@@ -442,6 +456,7 @@ frontend/src/stores/auth.ts
 - `restore`
 - `logout`
 - `clearAuth`
+- `updateUser`：更新当前用户信息（用于上传头像后同步状态）
 
 ### system store
 
@@ -671,6 +686,44 @@ frontend/src/views/upload/UploadView.vue
 - `file`：图书源文件。
 - `cover`：可选封面文件。
 - `title`、`author`、`description`、`category_ids`、`tag_ids`：可选元数据和分类标签。
+
+### 设置
+
+位置：
+
+```text
+frontend/src/views/settings/
+```
+
+能力：
+
+- **SettingsView.vue**：阅读设置页面
+  - 主题切换
+  - 阅读模式切换（滚动/分页）
+  - 字号调整
+  - 行距调整
+  - 阅读宽度调整
+  - 恢复默认设置
+  
+- **ProfileView.vue**：个人资料页面
+  - 查看和修改头像（上传自定义头像或选择默认头像）
+  - 编辑基本信息（邮箱、昵称）
+  - 修改密码
+  - 查看存储空间占用和配额
+
+头像功能：
+
+- 支持上传自定义头像，格式限制 PNG/JPEG/WebP/GIF，最大 5MB
+- 提供 6 个默认头像选项（default1 至 default6）
+- 上传自定义头像会替换原头像，设置默认头像会删除自定义头像
+- 头像更新后会同步到 auth store 和导航栏显示
+- 导航栏用户按钮会显示用户头像，未设置头像时显示默认图标
+- 头像通过 `GET /api/v1/users/:userId/avatar` 获取，登录后可访问任何用户头像
+
+路由：
+
+- `/settings`：阅读设置
+- `/profile`：个人资料
 
 ### 阅读器
 

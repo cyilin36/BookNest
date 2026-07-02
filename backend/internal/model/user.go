@@ -10,6 +10,8 @@ type User struct {
 	Nickname          *string    `gorm:"column:nickname" json:"nickname"`
 	Role              string     `gorm:"column:role" json:"role"`
 	Status            string     `gorm:"column:status" json:"status"`
+	AvatarPath        *string    `gorm:"column:avatar_path" json:"-"`
+	AvatarURL         *string    `gorm:"-" json:"avatar_url"`
 	StorageQuotaBytes *int64     `gorm:"column:storage_quota_bytes" json:"storage_quota_bytes"`
 	StorageUsedBytes  int64      `gorm:"-" json:"storage_used_bytes"`
 	CreatedAt         time.Time  `gorm:"column:created_at" json:"created_at"`

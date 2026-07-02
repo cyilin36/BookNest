@@ -52,6 +52,7 @@ export interface User {
   username: string
   email: string | null
   nickname: string | null
+  avatar_url: string | null
   role: UserRole
   status: UserStatus
   storage_quota_bytes: number | null

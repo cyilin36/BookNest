@@ -349,6 +349,7 @@ CREATE UNIQUE INDEX idx_users_email_unique_not_null ON users(email) WHERE email 
 - `email` 可为空，非空唯一。
 - 禁用用户不能登录、刷新 token 或访问受保护接口。
 - `storage_quota_bytes` 为空时使用系统默认配额。
+- `avatar_path` 存储头像文件相对路径，可为空。默认头像路径格式为 `default/<avatar_name>.svg`，自定义头像路径格式为 `avatars/<user_id>/avatar-<uuid>.<ext>`。
 
 ### 6.2 refresh_tokens
 
@@ -762,6 +763,11 @@ GET   /api/v1/users/me
 PATCH /api/v1/users/me
 PATCH /api/v1/users/me/password
 
+POST  /api/v1/users/me/avatar/upload
+POST  /api/v1/users/me/avatar/default
+GET   /api/v1/users/:userId/avatar
+HEAD  /api/v1/users/:userId/avatar
+
 GET   /api/v1/admin/users
 GET   /api/v1/admin/users/:id
 PATCH /api/v1/admin/users/:id
@@ -783,6 +789,44 @@ DELETE /api/v1/admin/users/:id
 - `/users/me` 返回当前用户基础信息时必须包含 `storage_quota_bytes` 和 `storage_used_bytes`。
 - `storage_used_bytes` 第一版按当前用户私有上传且未软删除的 `books.file_size` 汇总，不包含引自公共图书馆的引用。
 
+### 10.4 用户头像
+
+数据库字段：
+
+- `users.avatar_path`：头像文件相对路径，可空。
+
+头像类型：
+
+1. **默认头像**：系统预置 6 个简单 SVG 头像，存储在 `assets/default/default1.svg` 到 `default6.svg`。
+2. **自定义头像**：用户上传的图片，存储在 `assets/avatars/<user_id>/avatar-<uuid>.<ext>`。
+
+上传自定义头像：
+
+- `POST /api/v1/users/me/avatar/upload`
+- 支持 PNG、JPEG、WebP、GIF。
+- 最大 5 MB。
+- 上传成功后更新 `users.avatar_path`，并删除旧的自定义头像文件（默认头像不删除）。
+
+设置默认头像：
+
+- `POST /api/v1/users/me/avatar/default`
+- 请求体包含 `avatar_name`，必须是 `default1` 到 `default6` 之一。
+- 设置默认头像后，旧的自定义头像文件会被删除。
+- 默认头像路径格式为 `default/<avatar_name>.svg`。
+
+获取用户头像：
+
+- `GET /api/v1/users/:userId/avatar`
+- 任何登录用户都可以获取任何用户的头像。
+- 返回头像图片原始字节和正确 `Content-Type`。
+- 未设置头像时返回 `404`。
+- 响应头包含 `Cache-Control: public, max-age=3600`。
+
+用户模型返回：
+
+- `User` 接口包含 `avatar_url` 字段（格式为 `/api/v1/users/:userId/avatar`）。
+- `avatar_path` 为 `null` 或空字符串时，`avatar_url` 为 `null`。
+
 ## 11. 文件存储和上传
 
 真实目录：
@@ -799,6 +843,20 @@ DELETE /api/v1/admin/users/:id
     {book_id}/cover.jpg
     books/{book_id}/cover-{uuid}.jpg
     bookshelves/{bookshelf_id}/cover-{uuid}.jpg
+  assets/
+    site/
+      icon.{ext}
+      login-background.{ext}
+    default/
+      default1.svg
+      default2.svg
+      default3.svg
+      default4.svg
+      default5.svg
+      default6.svg
+    avatars/
+      {user_id}/
+        avatar-{uuid}.{ext}
   temp/
     upload-{uuid}.tmp
 ```
@@ -811,6 +869,10 @@ books/public/200.pdf
 covers/100/cover.jpg
 covers/books/100/cover-uuid.jpg
 covers/bookshelves/20/cover-uuid.jpg
+site/icon.png
+site/login-background.jpg
+default/default1.svg
+avatars/123/avatar-uuid.jpg
 ```
 
 规则：
@@ -1588,6 +1650,9 @@ DELETE /api/v1/admin/system/icon
 
 /api/v1/users/me
 /api/v1/users/me/password
+/api/v1/users/me/avatar/upload
+/api/v1/users/me/avatar/default
+/api/v1/users/:userId/avatar
 
 /api/v1/bookshelf
 /api/v1/bookshelf/:id
@@ -1656,6 +1721,9 @@ DELETE /api/v1/admin/users/:id
 获取登录页背景                 是    是        是
 查看自己的信息                 否    是        是
 修改自己的信息                 否    是        是
+上传自定义头像                 否    是        是
+设置默认头像                   否    是        是
+获取任意用户头像               否    是        是
 上传私有图书                   否    是        是
 查看自己的书架                 否    是        是
 阅读自己的私有图书             否    是        是
