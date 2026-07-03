@@ -59,6 +59,8 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	api.GET("/system/login-background", s.loginBackground)
 	api.HEAD("/system/login-background", s.loginBackground)
 	api.GET("/reader/books/:bookId/resources", s.readerResource)
+	api.GET("/users/:userId/avatar", s.userAvatar)
+	api.HEAD("/users/:userId/avatar", s.userAvatar)
 
 	api.POST("/auth/register", s.register)
 	api.POST("/auth/login", s.login)
@@ -73,8 +75,6 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	authRoutes.PATCH("/users/me/password", s.changePassword)
 	authRoutes.POST("/users/me/avatar/upload", middleware.BodyLimit(5*1024*1024), s.uploadAvatar)
 	authRoutes.POST("/users/me/avatar/default", s.setDefaultAvatar)
-	authRoutes.GET("/users/:userId/avatar", s.userAvatar)
-	authRoutes.HEAD("/users/:userId/avatar", s.userAvatar)
 
 	authRoutes.POST("/bookshelf/upload", middleware.BodyLimit(int64(s.cfg.RequestBodyLimitMB)*1024*1024), s.uploadPrivateBook)
 	authRoutes.GET("/bookshelf", s.bookshelfList)

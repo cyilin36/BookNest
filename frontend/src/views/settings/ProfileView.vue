@@ -40,9 +40,11 @@ const passwordForm = ref({
   confirm_password: ''
 })
 
+const avatarVersion = ref(Date.now())
+
 const avatarUrl = computed(() => {
   if (!profile.value?.avatar_url) return null
-  return `${profile.value.avatar_url}?t=${Date.now()}`
+  return `${profile.value.avatar_url}?t=${avatarVersion.value}`
 })
 
 const storagePercentage = computed(() => {
@@ -117,6 +119,7 @@ async function uploadAvatar(files: FileList | null) {
   avatarUploading.value = true
   try {
     profile.value = await userApi.uploadAvatar(file)
+    avatarVersion.value = Date.now()
     auth.updateUser(profile.value)
     message.success('头像已更新')
   } catch (error) {
@@ -132,6 +135,7 @@ async function setDefaultAvatar(avatarName: string) {
   avatarUploading.value = true
   try {
     profile.value = await userApi.setDefaultAvatar({ avatar_name: avatarName })
+    avatarVersion.value = Date.now()
     auth.updateUser(profile.value)
     message.success('已设置默认头像')
   } catch (error) {

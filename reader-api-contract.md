@@ -520,12 +520,13 @@ GET /api/v1/users/:userId/avatar
 HEAD /api/v1/users/:userId/avatar
 ```
 
-权限：登录。
+权限：**无需认证**（公开访问）。
 
 响应：头像图片原始字节和正确 `Content-Type`。未设置头像时返回 `404`。
 
 规则：
 
+- **无需 Authorization header**，任何人都可以访问，便于前端使用 `<img>` 标签直接加载。
 - 可以获取任何用户的头像（包括自己和其他用户）。
 - 默认头像返回 SVG 格式。
 - 自定义头像返回上传时的原始格式。

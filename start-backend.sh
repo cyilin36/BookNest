@@ -10,6 +10,10 @@ DATA_DIR="$PROJECT_ROOT/test/backend-data"
 # 创建必要的数据目录
 mkdir -p "$DATA_DIR/books" "$DATA_DIR/covers" "$DATA_DIR/assets" "$DATA_DIR/temp"
 
+# 复制默认头像到运行目录
+mkdir -p "$DATA_DIR/assets/default"
+cp -f "$BACKEND_DIR/assets/default"/*.svg "$DATA_DIR/assets/default/" 2>/dev/null || true
+
 cd "$BACKEND_DIR"
 
 # 设置环境变量

@@ -35,6 +35,13 @@ if [ "$(id -u)" = "0" ]; then
   fi
 
   mkdir -p "$DATA_DIR" "$BOOKS_DIR" "$COVERS_DIR" "$ASSETS_DIR" "$TEMP_DIR"
+
+  # 复制默认头像到运行目录（如果源文件存在）
+  if [ -d "/app/assets/default" ]; then
+    mkdir -p "$ASSETS_DIR/default"
+    cp -f /app/assets/default/*.svg "$ASSETS_DIR/default/" 2>/dev/null || true
+  fi
+
   chown -R "$PUID:$PGID" "$DATA_DIR" "$BOOKS_DIR" "$COVERS_DIR" "$ASSETS_DIR" "$TEMP_DIR"
 
   exec su-exec "$PUID:$PGID" "$@"

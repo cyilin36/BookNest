@@ -791,41 +791,151 @@ DELETE /api/v1/admin/users/:id
 
 ### 10.4 用户头像
 
-数据库字段：
+#### 数据库设计
 
-- `users.avatar_path`：头像文件相对路径，可空。
+`users.avatar_path` (VARCHAR(512), nullable)：存储头像文件相对路径。
 
-头像类型：
+- 默认头像：`default/default1.svg` 到 `default/default6.svg`
+- 自定义头像：`avatars/<user_id>/avatar-<uuid>.<ext>`
 
-1. **默认头像**：系统预置 6 个简单 SVG 头像，存储在 `assets/default/default1.svg` 到 `default6.svg`。
-2. **自定义头像**：用户上传的图片，存储在 `assets/avatars/<user_id>/avatar-<uuid>.<ext>`。
+迁移文件：
 
-上传自定义头像：
+- `000006_add_user_avatar.up.sql`：添加 `avatar_path` 字段
+- `000006_add_user_avatar.down.sql`：回滚迁移
 
-- `POST /api/v1/users/me/avatar/upload`
-- 支持 PNG、JPEG、WebP、GIF。
-- 最大 5 MB。
-- 上传成功后更新 `users.avatar_path`，并删除旧的自定义头像文件（默认头像不删除）。
+#### 默认头像
 
-设置默认头像：
+系统预置 6 个简单 SVG 头像（不同颜色的圆形剪影）：
 
-- `POST /api/v1/users/me/avatar/default`
-- 请求体包含 `avatar_name`，必须是 `default1` 到 `default6` 之一。
-- 设置默认头像后，旧的自定义头像文件会被删除。
-- 默认头像路径格式为 `default/<avatar_name>.svg`。
+- `default1.svg` - 粉色 (#E8B4B8)
+- `default2.svg` - 绿色 (#A8D5BA)
+- `default3.svg` - 蓝色 (#A3C4E8)
+- `default4.svg` - 橙色 (#F4D4A8)
+- `default5.svg` - 紫色 (#D4A8E8)
+- `default6.svg` - 米黄色 (#E8D4A8)
 
-获取用户头像：
+源码位置：`backend/assets/default/*.svg`
 
-- `GET /api/v1/users/:userId/avatar`
-- 任何登录用户都可以获取任何用户的头像。
-- 返回头像图片原始字节和正确 `Content-Type`。
-- 未设置头像时返回 `404`。
-- 响应头包含 `Cache-Control: public, max-age=3600`。
+部署处理：
 
-用户模型返回：
+- 开发环境：`start-backend.sh` 启动时自动复制到 `$DATA_DIR/assets/default/`
+- 生产环境：`Dockerfile` 将 `assets/` 打包到镜像，`docker-entrypoint.sh` 容器启动时自动复制到数据卷
 
-- `User` 接口包含 `avatar_url` 字段（格式为 `/api/v1/users/:userId/avatar`）。
-- `avatar_path` 为 `null` 或空字符串时，`avatar_url` 为 `null`。
+#### 上传自定义头像
+
+```http
+POST /api/v1/users/me/avatar/upload
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+规则：
+
+- 支持格式：PNG、JPEG、WebP、GIF
+- 最大 5 MB（通过 `middleware.BodyLimit(5*1024*1024)` 限制）
+- 三重验证：扩展名、Content-Type、魔数（magic number）
+- 保存到 `$DATA_DIR/assets/avatars/<user_id>/avatar-<uuid>.<ext>`
+- 更新 `users.avatar_path` 字段
+- 自动删除旧的自定义头像文件（默认头像不删除）
+
+错误码：
+
+- `avatar_format_not_supported`：不支持的格式
+- `avatar_content_invalid`：文件内容与声明格式不匹配
+- `avatar_too_large`：文件超过 5MB
+
+实现：
+
+- 处理函数：`uploadAvatar()`
+- 存储方法：`storage.SaveUserAvatar()`
+- 辅助函数：`avatarFormat()` 验证格式，`validAvatarBytes()` 验证魔数
+
+#### 设置默认头像
+
+```http
+POST /api/v1/users/me/avatar/default
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "avatar_name": "default1"  // default1 到 default6
+}
+```
+
+规则：
+
+- `avatar_name` 必须在允许列表 `[default1, default2, default3, default4, default5, default6]` 中
+- 更新 `users.avatar_path` 为 `default/<avatar_name>.svg`
+- 自动删除旧的自定义头像文件（默认头像不删除）
+
+错误码：
+
+- `invalid_avatar_name`：无效的默认头像名称
+
+实现：
+
+- 处理函数：`setDefaultAvatar()`
+
+#### 获取用户头像
+
+```http
+GET /api/v1/users/:userId/avatar
+HEAD /api/v1/users/:userId/avatar
+```
+
+权限：**无需认证**（公开访问）。
+
+规则：
+
+- 任何人都可以访问（便于前端 `<img>` 标签直接加载）
+- 根据文件扩展名返回正确的 `Content-Type`（`image/svg+xml`、`image/png` 等）
+- 响应头包含 `Cache-Control: public, max-age=3600`
+- 未设置头像时返回 404
+- 注册在公开 `api` 路由组，不在 `authRoutes` 下
+
+实现：
+
+- 处理函数：`userAvatar()`
+- 使用 `c.File()` 返回文件流
+- `http.DetectContentType()` + 扩展名映射确定 Content-Type
+
+#### 用户模型变更
+
+`internal/model/user.go`：
+
+- `AvatarPath *string`：数据库字段，JSON 序列化时忽略（`json:"-"`）
+- `AvatarURL *string`：计算字段，不存数据库（`gorm:"-"`）
+
+`FindUserByID()` 填充 `avatar_url`：
+
+```go
+u.AvatarURL = avatarURL(u.ID, u.AvatarPath)
+```
+
+`avatarURL()` 辅助函数：
+
+```go
+func avatarURL(userID int64, avatarPath *string) *string {
+    if avatarPath == nil || strings.TrimSpace(*avatarPath) == "" {
+        return nil
+    }
+    v := fmt.Sprintf("/api/v1/users/%d/avatar", userID)
+    return &v
+}
+```
+
+#### 安全特性
+
+1. **文件格式验证**：三重验证（扩展名、Content-Type、魔数）防止恶意文件上传
+2. **大小限制**：5MB 硬限制，通过中间件和代码双重校验
+3. **路径安全**：所有路径通过 `storage` 模块生成，防止路径穿越
+4. **权限控制**：上传/设置头像只能修改自己的，查看头像公开访问
+5. **文件隔离**：每个用户的自定义头像存储在独立目录 `avatars/<user_id>/`
+6. **旧文件清理**：上传新头像或设置默认头像时自动删除旧的自定义头像
 
 ## 11. 文件存储和上传
 
