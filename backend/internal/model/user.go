@@ -3,18 +3,21 @@ package model
 import "time"
 
 type User struct {
-	ID                int64      `gorm:"column:id;primaryKey" json:"id"`
-	Username          string     `gorm:"column:username" json:"username"`
-	Email             *string    `gorm:"column:email" json:"email"`
-	PasswordHash      string     `gorm:"column:password_hash" json:"-"`
-	Nickname          *string    `gorm:"column:nickname" json:"nickname"`
-	Role              string     `gorm:"column:role" json:"role"`
-	Status            string     `gorm:"column:status" json:"status"`
-	StorageQuotaBytes *int64     `gorm:"column:storage_quota_bytes" json:"storage_quota_bytes"`
-	StorageUsedBytes  int64      `gorm:"-" json:"storage_used_bytes"`
-	CreatedAt         time.Time  `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt         time.Time  `gorm:"column:updated_at" json:"-"`
-	LastLoginAt       *time.Time `gorm:"column:last_login_at" json:"last_login_at"`
+	ID                         int64      `gorm:"column:id;primaryKey" json:"id"`
+	Username                   string     `gorm:"column:username" json:"username"`
+	Email                      *string    `gorm:"column:email" json:"email"`
+	PasswordHash               string     `gorm:"column:password_hash" json:"-"`
+	Nickname                   *string    `gorm:"column:nickname" json:"nickname"`
+	Role                       string     `gorm:"column:role" json:"role"`
+	Status                     string     `gorm:"column:status" json:"status"`
+	AvatarPath                 *string    `gorm:"column:avatar_path" json:"-"`
+	AvatarURL                  *string    `gorm:"-" json:"avatar_url"`
+	StorageQuotaBytes          *int64     `gorm:"column:storage_quota_bytes" json:"storage_quota_bytes"`
+	StorageUsedBytes           int64      `gorm:"-" json:"storage_used_bytes"`
+	EffectiveStorageQuotaBytes *int64     `gorm:"-" json:"effective_storage_quota_bytes"`
+	CreatedAt                  time.Time  `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt                  time.Time  `gorm:"column:updated_at" json:"-"`
+	LastLoginAt                *time.Time `gorm:"column:last_login_at" json:"last_login_at"`
 }
 
 func (User) TableName() string { return "users" }

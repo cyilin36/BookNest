@@ -62,11 +62,8 @@ func (s *Server) uploadBook(c *gin.Context, visibility string) {
 		common.RespondError(c, middleware.GetRequestID(c), common.ErrPayloadTooLarge)
 		return
 	}
-	if visibility == model.BookVisibilityPrivate {
-		quota := int64(s.loadSettings().DefaultUserStorageQuotaMB) * 1024 * 1024
-		if u.StorageQuotaBytes != nil {
-			quota = *u.StorageQuotaBytes
-		}
+	if visibility == model.BookVisibilityPrivate && s.storageQuotaEnforced(u) {
+		quota := s.effectiveStorageQuotaBytes(u)
 		if quota > 0 && s.storageUsedBytes(u.ID)+stored.Size > quota {
 			_ = os.Remove(stored.AbsolutePath)
 			common.RespondError(c, middleware.GetRequestID(c), common.ErrStorageQuotaExceeded)

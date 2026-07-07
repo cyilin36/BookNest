@@ -12,6 +12,7 @@ RUN apk add --no-cache su-exec
 RUN addgroup -g 1000 appgroup && adduser -D -H -u 1000 -G appgroup appuser
 WORKDIR /app
 COPY --from=build /out/booknest-server /app/booknest-server
+COPY --from=build /src/assets /app/assets
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 

@@ -27,6 +27,8 @@ frontend/
 - 三套主题：Modern、Sepia、Dark。
 - 受保护封面图片前端鉴权加载。
 - 登录页自定义背景图片支持。
+- 用户头像功能：支持上传自定义头像（PNG/JPEG/WebP/GIF，最大 5MB）、选择默认头像（6 个预设：default1 至 default6），导航栏显示用户头像，头像更新后自动同步到导航栏。
+- 个人资料管理：编辑昵称、邮箱，修改密码（成功后自动退出登录），查看存储空间占用和配额百分比。
 
 当前未完成或后续增强：
 
@@ -168,6 +170,17 @@ DELETE /api/v1/admin/system/login-background
 
 站点图标和登录页背景通过 `site_icon_url` 和 `login_background_url` 在 `GET /api/v1/system/info` 返回；管理员上传/删除图标和背景必须走独立接口，不能把这些 URL 作为系统设置修改字段提交。
 
+用户头像和个人资料接口：
+
+```http
+GET /api/v1/users/me
+PATCH /api/v1/users/me
+PATCH /api/v1/users/me/password
+POST /api/v1/users/me/avatar/upload
+POST /api/v1/users/me/avatar/default
+GET /api/v1/users/:userId/avatar
+```
+
 阅读器依赖接口：
 
 ```http
@@ -274,6 +287,7 @@ frontend/
         ReaderView.vue
       settings/
         SettingsView.vue
+        ProfileView.vue
       upload/
         UploadView.vue
 ```
@@ -442,6 +456,7 @@ frontend/src/stores/auth.ts
 - `restore`
 - `logout`
 - `clearAuth`
+- `updateUser`：更新当前用户信息（用于上传头像后同步状态）
 
 ### system store
 
@@ -672,6 +687,35 @@ frontend/src/views/upload/UploadView.vue
 - `cover`：可选封面文件。
 - `title`、`author`、`description`、`category_ids`、`tag_ids`：可选元数据和分类标签。
 
+### 设置
+
+位置：
+
+```text
+frontend/src/views/settings/
+```
+
+能力：
+
+- **SettingsView.vue**：阅读设置页面
+  - 主题切换
+  - 阅读模式切换（滚动/分页）
+  - 字号调整
+  - 行距调整
+  - 阅读宽度调整
+  - 恢复默认设置
+  
+- **ProfileView.vue**：个人资料页面
+  - **头像管理**：显示当前头像（120x120px 圆形预览，桌面端；100x100px 移动端），上传自定义头像（点击"上传自定义头像"按钮触发文件选择，格式限制 PNG/JPEG/WebP/GIF，最大 5MB），选择默认头像（6 个按钮：default1 至 default6）。前端先校验文件扩展名、MIME 类型和大小，校验失败显示明确错误提示和格式限制说明。上传或选择成功后，递增 `avatarVersion` 响应式变量触发预览刷新（通过 `avatarUrl` computed 属性附加时间戳参数破坏缓存），同时调用 `auth.updateUser(profile.value)` 同步到 auth store，导航栏立即显示更新后头像。未设置头像时预览区域显示灰色占位符和"未设置"文字。
+  - **基本信息编辑**：显示用户名（只读），编辑邮箱（可选），编辑昵称（可选）。通过 `PATCH /api/v1/users/me` 提交 `{email, nickname}`，字段值为空时传 `null`。保存成功后更新本地 `profile` 状态并显示成功消息。
+  - **存储空间显示**：显示已用空间 / 生效配额（字节数格式化为 B/KB/MB/GB）。配额优先使用后端计算好的 `effective_storage_quota_bytes` 字段，无需前端判断角色或查询全局设置：该字段为 `null` 时表示不限制（管理员或生效配额 ≤ 0），此时显示"无限制"并隐藏进度条；否则进度条按 `storage_used_bytes / effective_storage_quota_bytes` 计算占用百分比（上限 100%）。存储空间只统计私人书籍，公共图书不计入。
+  - **密码修改**：点击"修改密码"按钮弹出模态对话框，输入当前密码、新密码、确认新密码。前端先验证两次新密码一致性，不一致时显示"两次输入的新密码不一致"错误提示，不发送请求。通过 `PATCH /api/v1/users/me/password` 提交 `{old_password, new_password}`，成功后显示"密码修改成功，请重新登录"提示，并在 1.5 秒后自动调用 `auth.logout()` 清空认证状态并跳转登录页（用户需重新登录验证新密码）。
+
+路由：
+
+- `/settings`：阅读设置
+- `/profile`：个人资料
+
 ### 阅读器
 
 位置：
@@ -738,10 +782,11 @@ frontend/src/views/admin/
 
 - 概览指标
 - 用户筛选、角色调整、启用/禁用、删除普通用户账号
+- 用户存储配额管理：用户列表存储列展示「已用 / 生效配额」（`effective_storage_quota_bytes`，`null` 显示"无限制"）和配额来源标识（专属配额 / 全局默认 / 专属·不限制）。点击"配额"按钮打开弹窗，通过 `PATCH /api/v1/admin/users/:id` 提交 `storage_quota_bytes` 设置该用户专属配额：套用全局默认传 `null`（清除专属配额），不限制传 `0`，自定义配额传具体字节数（前端按 MB 输入，保存时换算为字节）。
 - 公共图书筛选、`approved`/`hidden` 状态流转、真正删除；筛选条件由右上角搜索图标打开抽屉操作，状态流转使用直接操作按钮，删除使用独立按钮。
 - 分类新增、编辑、删除
 - 标签新增、编辑、删除
-- 系统设置编辑，包括站点名称、站点图标上传/删除、登录页背景上传/删除、注册开关、图书馆审核和上传限制。
+- 系统设置编辑，包括站点名称、站点图标上传/删除、登录页背景上传/删除、注册开关、图书馆审核、上传限制和默认用户存储配额（`default_user_storage_quota_mb`，仅对未设置专属配额的普通用户生效，`0` 表示默认不限制）。
 
 ## 11. 视觉和响应式
 

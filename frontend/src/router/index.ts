@@ -12,6 +12,7 @@ import MyLibraryView from '@/views/library/MyLibraryView.vue'
 import ReaderView from '@/views/reader/ReaderView.vue'
 import UploadView from '@/views/upload/UploadView.vue'
 import SettingsView from '@/views/settings/SettingsView.vue'
+import ProfileView from '@/views/settings/ProfileView.vue'
 import AdminHomeView from '@/views/admin/AdminHomeView.vue'
 import AdminUsersView from '@/views/admin/AdminUsersView.vue'
 import AdminLibraryView from '@/views/admin/AdminLibraryView.vue'
@@ -43,6 +44,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'library/:id', name: 'library-detail', component: LibraryDetailView, props: true },
       { path: 'upload', name: 'upload', component: UploadView },
       { path: 'settings', name: 'settings', component: SettingsView },
+      { path: 'profile', name: 'profile', component: ProfileView },
       { path: 'admin', name: 'admin', component: AdminHomeView, meta: { requiresAdmin: true } },
       { path: 'admin/users', name: 'admin-users', component: AdminUsersView, meta: { requiresAdmin: true } },
       { path: 'admin/books', name: 'admin-books', component: AdminLibraryView, meta: { requiresAdmin: true } },

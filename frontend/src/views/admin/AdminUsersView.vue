@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useDialog, useMessage } from 'naive-ui'
-import { Search, Trash2 } from 'lucide-vue-next'
+import { HardDrive, Search, Trash2 } from 'lucide-vue-next'
 import PageShell from '@/components/common/PageShell.vue'
 import PaginationBar from '@/components/common/PaginationBar.vue'
 import { userApi } from '@/api/user'
@@ -39,6 +39,71 @@ const loadedRange = computed(() => {
   const end = start + users.value.length - 1
   return `${start}-${end}`
 })
+
+const showQuotaDialog = ref(false)
+const quotaSaving = ref(false)
+const quotaTarget = ref<User | null>(null)
+// 配额模式：default 套用全局默认，unlimited 不限制，custom 指定 MB
+const quotaMode = ref<'default' | 'unlimited' | 'custom'>('default')
+const quotaValueMb = ref<number>(10240)
+
+const quotaModeOptions = [
+  { label: '套用全局默认', value: 'default' },
+  { label: '不限制', value: 'unlimited' },
+  { label: '自定义配额', value: 'custom' }
+]
+
+// 生效配额展示：null 表示不限制（管理员或生效配额 ≤ 0）
+function effectiveQuotaText(user: User) {
+  if (user.effective_storage_quota_bytes === null) return '无限制'
+  return formatBytes(user.effective_storage_quota_bytes)
+}
+
+// 专属配额来源标识：null 套用全局默认，0 不限制，其他为专属值
+function quotaSourceText(user: User) {
+  if (user.storage_quota_bytes === null) return '全局默认'
+  if (user.storage_quota_bytes === 0) return '专属·不限制'
+  return '专属配额'
+}
+
+function openQuotaDialog(user: User) {
+  quotaTarget.value = user
+  if (user.storage_quota_bytes === null) {
+    quotaMode.value = 'default'
+    quotaValueMb.value = 10240
+  } else if (user.storage_quota_bytes === 0) {
+    quotaMode.value = 'unlimited'
+    quotaValueMb.value = 10240
+  } else {
+    quotaMode.value = 'custom'
+    quotaValueMb.value = Math.max(1, Math.round(user.storage_quota_bytes / (1024 * 1024)))
+  }
+  showQuotaDialog.value = true
+}
+
+async function saveQuota() {
+  const target = quotaTarget.value
+  if (!target) return
+  let storageQuotaBytes: number | null
+  if (quotaMode.value === 'default') {
+    storageQuotaBytes = null
+  } else if (quotaMode.value === 'unlimited') {
+    storageQuotaBytes = 0
+  } else {
+    storageQuotaBytes = Math.round((quotaValueMb.value || 0) * 1024 * 1024)
+  }
+  quotaSaving.value = true
+  try {
+    const updated = await userApi.update(target.id, { storage_quota_bytes: storageQuotaBytes })
+    Object.assign(target, updated)
+    message.success('存储配额已更新')
+    showQuotaDialog.value = false
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '更新失败')
+  } finally {
+    quotaSaving.value = false
+  }
+}
 
 async function fetchUsers(page = 1) {
   loading.value = true
@@ -201,24 +266,61 @@ onMounted(() => fetchUsers())
             :options="[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]"
             @update:value="(value: UserStatus) => onStatusSelect(user, value)"
           />
-          <span>{{ formatBytes(user.storage_used_bytes) }}</span>
+          <div class="storage-cell">
+            <span class="storage-usage">{{ formatBytes(user.storage_used_bytes) }} / {{ effectiveQuotaText(user) }}</span>
+            <span class="storage-source" :class="{ 'is-custom': user.storage_quota_bytes !== null }">{{ quotaSourceText(user) }}</span>
+          </div>
           <span>{{ formatDate(user.last_login_at) }}</span>
-          <n-button
-            v-if="user.role === 'user'"
-            size="small"
-            type="error"
-            secondary
-            :loading="deletingUserId === user.id"
-            @click="confirmDeleteUser(user)"
-          >
-            <template #icon><Trash2 :size="15" /></template>
-            删除
-          </n-button>
-          <span v-else class="muted">-</span>
+          <div class="row-actions">
+            <n-button size="small" secondary @click="openQuotaDialog(user)">
+              <template #icon><HardDrive :size="15" /></template>
+              配额
+            </n-button>
+            <n-button
+              v-if="user.role === 'user'"
+              size="small"
+              type="error"
+              secondary
+              :loading="deletingUserId === user.id"
+              @click="confirmDeleteUser(user)"
+            >
+              <template #icon><Trash2 :size="15" /></template>
+              删除
+            </n-button>
+          </div>
         </div>
       </div>
     </n-spin>
     <PaginationBar :pagination="pagination" @change="fetchUsers" />
+
+    <n-modal v-model:show="showQuotaDialog" preset="dialog" title="设置存储配额">
+      <div v-if="quotaTarget" class="quota-dialog">
+        <p class="quota-target">
+          用户「<strong>{{ quotaTarget.username }}</strong>」当前已用 {{ formatBytes(quotaTarget.storage_used_bytes) }}，
+          生效配额 {{ effectiveQuotaText(quotaTarget) }}。
+        </p>
+        <n-radio-group v-model:value="quotaMode">
+          <n-space vertical>
+            <n-radio v-for="option in quotaModeOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </n-radio>
+          </n-space>
+        </n-radio-group>
+        <div v-if="quotaMode === 'custom'" class="quota-input">
+          <n-input-number v-model:value="quotaValueMb" :min="1" :step="1024">
+            <template #suffix>MB</template>
+          </n-input-number>
+          <span class="quota-hint">约 {{ formatBytes(Math.round((quotaValueMb || 0) * 1024 * 1024)) }}</span>
+        </div>
+        <p class="quota-note">套用全局默认时清除该用户专属配额，回退到系统设置中的默认配额；不限制表示该用户不受存储上限约束。</p>
+      </div>
+      <template #action>
+        <n-space>
+          <n-button @click="showQuotaDialog = false">取消</n-button>
+          <n-button type="primary" :loading="quotaSaving" @click="saveQuota">保存配额</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </PageShell>
 </template>
 
@@ -309,7 +411,7 @@ onMounted(() => fetchUsers())
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-width: 760px;
+  min-width: 940px;
   padding: 14px 4px 10px;
 }
 
@@ -320,10 +422,10 @@ onMounted(() => fetchUsers())
 
 .row {
   display: grid;
-  grid-template-columns: minmax(220px, 2fr) 132px 132px 110px 160px 88px;
+  grid-template-columns: minmax(200px, 1.6fr) 120px 120px 170px 150px 168px;
   align-items: center;
   gap: 12px;
-  min-width: 760px;
+  min-width: 940px;
   padding: 11px 4px;
   border-bottom: 1px solid var(--color-border);
 }
@@ -371,7 +473,71 @@ onMounted(() => fetchUsers())
 }
 
 .cell-select {
-  max-width: 132px;
+  max-width: 120px;
+}
+
+.storage-cell {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.storage-usage {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.storage-source {
+  justify-self: start;
+  padding: 1px 8px;
+  background: var(--color-bg-page);
+  border-radius: 999px;
+  color: var(--color-text-sec);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.storage-source.is-custom {
+  background: var(--color-primary-suppl);
+  color: var(--color-primary);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quota-dialog {
+  display: grid;
+  gap: 14px;
+}
+
+.quota-target {
+  margin: 0;
+  color: var(--color-text-sec);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.quota-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.quota-hint {
+  color: var(--color-text-sec);
+  font-size: 13px;
+}
+
+.quota-note {
+  margin: 0;
+  color: var(--color-text-sec);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 @media (max-width: 1080px) {

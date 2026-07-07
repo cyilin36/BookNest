@@ -57,7 +57,7 @@ func (s *Server) adminUsers(c *gin.Context) {
 		return
 	}
 	for i := range users {
-		users[i].StorageUsedBytes = s.storageUsedBytes(users[i].ID)
+		s.fillUserComputed(&users[i])
 	}
 	common.RespondPage(c, middleware.GetRequestID(c), users, page, size, total)
 }

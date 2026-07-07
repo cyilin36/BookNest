@@ -41,7 +41,7 @@ func (s *Server) FindUserByID(id int64) (*model.User, error) {
 	if err := s.db.First(&u, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
-	u.StorageUsedBytes = s.storageUsedBytes(u.ID)
+	s.fillUserComputed(&u)
 	return &u, nil
 }
 
@@ -58,6 +58,8 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	api.GET("/system/login-background", s.loginBackground)
 	api.HEAD("/system/login-background", s.loginBackground)
 	api.GET("/reader/books/:bookId/resources", s.readerResource)
+	api.GET("/users/:userId/avatar", s.userAvatar)
+	api.HEAD("/users/:userId/avatar", s.userAvatar)
 
 	api.POST("/auth/register", s.register)
 	api.POST("/auth/login", s.login)
@@ -70,6 +72,8 @@ func (s *Server) RegisterRoutes(r *gin.Engine) {
 	authRoutes.GET("/users/me", s.me)
 	authRoutes.PATCH("/users/me", s.updateMe)
 	authRoutes.PATCH("/users/me/password", s.changePassword)
+	authRoutes.POST("/users/me/avatar/upload", middleware.BodyLimit(5*1024*1024), s.uploadAvatar)
+	authRoutes.POST("/users/me/avatar/default", s.setDefaultAvatar)
 
 	authRoutes.POST("/bookshelf/upload", middleware.BodyLimit(int64(s.cfg.RequestBodyLimitMB)*1024*1024), s.uploadPrivateBook)
 	authRoutes.GET("/bookshelf", s.bookshelfList)
@@ -324,7 +328,7 @@ func (s *Server) logout(c *gin.Context) {
 
 func (s *Server) me(c *gin.Context) {
 	u := middleware.CurrentUser(c)
-	u.StorageUsedBytes = s.storageUsedBytes(u.ID)
+	s.fillUserComputed(u)
 	common.RespondJSON(c, middleware.GetRequestID(c), u)
 }
 
@@ -411,6 +415,211 @@ func (s *Server) changePassword(c *gin.Context) {
 	common.RespondJSON(c, middleware.GetRequestID(c), gin.H{})
 }
 
+func (s *Server) uploadAvatar(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
+		return
+	}
+	defer file.Close()
+
+	ext, contentType, ok := avatarFormat(header.Filename, header.Header.Get("Content-Type"))
+	if !ok {
+		common.RespondError(c, middleware.GetRequestID(c), &common.APIError{
+			Code:    "avatar_format_not_supported",
+			Message: "Only PNG, JPEG, WebP, GIF images are supported",
+			Status:  400,
+		})
+		return
+	}
+
+	buf := make([]byte, 512)
+	n, _ := file.Read(buf)
+	if n > 0 {
+		file.Seek(0, 0)
+	}
+	if !validAvatarBytes(buf[:n], contentType) {
+		common.RespondError(c, middleware.GetRequestID(c), &common.APIError{
+			Code:    "avatar_content_invalid",
+			Message: "File content does not match expected image format",
+			Status:  400,
+		})
+		return
+	}
+
+	if header.Size > 5*1024*1024 {
+		common.RespondError(c, middleware.GetRequestID(c), &common.APIError{
+			Code:    "avatar_too_large",
+			Message: "Avatar size must not exceed 5 MB",
+			Status:  400,
+		})
+		return
+	}
+
+	relPath, err := s.store.SaveUserAvatar(file, u.ID, ext)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+
+	oldPath := u.AvatarPath
+	if err := s.db.Model(&model.User{}).Where("id = ?", u.ID).Updates(map[string]any{
+		"avatar_path": relPath,
+		"updated_at":  time.Now(),
+	}).Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+
+	if oldPath != nil && !strings.HasPrefix(*oldPath, "default/") {
+		if absPath, err := s.store.AssetPath(*oldPath); err == nil {
+			_ = os.Remove(absPath)
+		}
+	}
+
+	fresh, _ := s.FindUserByID(u.ID)
+	common.RespondJSON(c, middleware.GetRequestID(c), fresh)
+}
+
+func (s *Server) setDefaultAvatar(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	var req struct {
+		AvatarName string `json:"avatar_name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.AvatarName == "" {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrValidationFailed)
+		return
+	}
+
+	allowed := []string{"default1", "default2", "default3", "default4", "default5", "default6"}
+	valid := false
+	for _, name := range allowed {
+		if req.AvatarName == name {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		common.RespondError(c, middleware.GetRequestID(c), &common.APIError{
+			Code:    "invalid_avatar_name",
+			Message: "Invalid default avatar name",
+			Status:  400,
+		})
+		return
+	}
+
+	defaultPath := "default/" + req.AvatarName + ".svg"
+	oldPath := u.AvatarPath
+	if err := s.db.Model(&model.User{}).Where("id = ?", u.ID).Updates(map[string]any{
+		"avatar_path": defaultPath,
+		"updated_at":  time.Now(),
+	}).Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), err)
+		return
+	}
+
+	if oldPath != nil && !strings.HasPrefix(*oldPath, "default/") {
+		if absPath, err := s.store.AssetPath(*oldPath); err == nil {
+			_ = os.Remove(absPath)
+		}
+	}
+
+	fresh, _ := s.FindUserByID(u.ID)
+	common.RespondJSON(c, middleware.GetRequestID(c), fresh)
+}
+
+func (s *Server) userAvatar(c *gin.Context) {
+	userIDStr := c.Param("userId")
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+
+	var avatarPath *string
+	if err := s.db.Model(&model.User{}).Select("avatar_path").Where("id = ?", userID).Scan(&avatarPath).Error; err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+
+	if avatarPath == nil || strings.TrimSpace(*avatarPath) == "" {
+		c.Status(404)
+		return
+	}
+
+	absPath, err := s.store.AssetPath(*avatarPath)
+	if err != nil {
+		common.RespondError(c, middleware.GetRequestID(c), common.ErrNotFound)
+		return
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil || info.IsDir() {
+		c.Status(404)
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(absPath))
+	contentType := "application/octet-stream"
+	switch ext {
+	case ".png":
+		contentType = "image/png"
+	case ".jpg", ".jpeg":
+		contentType = "image/jpeg"
+	case ".webp":
+		contentType = "image/webp"
+	case ".gif":
+		contentType = "image/gif"
+	case ".svg":
+		contentType = "image/svg+xml"
+	}
+
+	c.Header("Content-Type", contentType)
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.File(absPath)
+}
+
+func avatarFormat(filename, contentTypeValue string) (string, string, bool) {
+	ext := strings.ToLower(filepath.Ext(filename))
+	normalizedContentType := strings.ToLower(strings.TrimSpace(strings.Split(contentTypeValue, ";")[0]))
+	formats := map[string]string{
+		".png":  "image/png",
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".webp": "image/webp",
+		".gif":  "image/gif",
+	}
+	if ct, ok := formats[ext]; ok {
+		return ext, ct, true
+	}
+	for allowedExt, allowedContentType := range formats {
+		if normalizedContentType == allowedContentType {
+			return allowedExt, allowedContentType, true
+		}
+	}
+	return "", "", false
+}
+
+func validAvatarBytes(data []byte, expectedContentType string) bool {
+	if len(data) < 4 {
+		return false
+	}
+	switch expectedContentType {
+	case "image/png":
+		return len(data) >= 8 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
+	case "image/jpeg":
+		return data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF
+	case "image/webp":
+		return len(data) >= 12 && data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 &&
+			data[8] == 0x57 && data[9] == 0x45 && data[10] == 0x42 && data[11] == 0x50
+	case "image/gif":
+		return len(data) >= 6 && data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 &&
+			data[3] == 0x38 && (data[4] == 0x37 || data[4] == 0x39) && data[5] == 0x61
+	}
+	return false
+}
+
 func (s *Server) respondSession(c *gin.Context, u *model.User) {
 	access, expires, err := s.tokens.CreateAccessToken(u)
 	if err != nil {
@@ -433,7 +642,7 @@ func (s *Server) respondSession(c *gin.Context, u *model.User) {
 		return
 	}
 	setRefreshCookie(c, refreshToken, s.cfg.RefreshTokenTTL, s.cfg.AppEnv == "production")
-	u.StorageUsedBytes = s.storageUsedBytes(u.ID)
+	s.fillUserComputed(u)
 	common.RespondJSON(c, middleware.GetRequestID(c), AuthSession{AccessToken: access, TokenType: "Bearer", ExpiresIn: expires, User: u})
 }
 
@@ -567,10 +776,53 @@ func (s *Server) removeAssetFile(relative string) error {
 	return os.Remove(path)
 }
 
+// storageUsedBytes 返回用户已用的存储空间（字节）。
+// 只统计私人书籍（visibility = private），公共图书不计入用户配额。
 func (s *Server) storageUsedBytes(userID int64) int64 {
 	var total int64
-	_ = s.db.Model(&model.Book{}).Where("owner_user_id = ? AND deleted_at IS NULL", userID).Select("COALESCE(SUM(file_size), 0)").Scan(&total).Error
+	_ = s.db.Model(&model.Book{}).
+		Where("owner_user_id = ? AND visibility = ? AND deleted_at IS NULL", userID, model.BookVisibilityPrivate).
+		Select("COALESCE(SUM(file_size), 0)").Scan(&total).Error
 	return total
+}
+
+// storageQuotaEnforced 判断是否对该用户执行存储配额限制。
+// 管理员不受配额限制。
+func (s *Server) storageQuotaEnforced(u *model.User) bool {
+	if u == nil {
+		return false
+	}
+	return u.Role != model.UserRoleAdmin
+}
+
+// effectiveStorageQuotaBytes 返回该用户实际生效的存储配额（字节）。
+// 用户设置了专属配额时使用专属值，否则回退到全局默认配额。
+// 返回值 <= 0 表示不限制。
+func (s *Server) effectiveStorageQuotaBytes(u *model.User) int64 {
+	if u != nil && u.StorageQuotaBytes != nil {
+		return *u.StorageQuotaBytes
+	}
+	return int64(s.loadSettings().DefaultUserStorageQuotaMB) * 1024 * 1024
+}
+
+// fillUserComputed 填充 User 的计算字段：已用存储、生效配额、头像 URL。
+// EffectiveStorageQuotaBytes 为 nil 表示不限制（管理员，或生效配额 <= 0）。
+func (s *Server) fillUserComputed(u *model.User) {
+	if u == nil {
+		return
+	}
+	u.StorageUsedBytes = s.storageUsedBytes(u.ID)
+	u.AvatarURL = avatarURL(u.ID, u.AvatarPath)
+	if !s.storageQuotaEnforced(u) {
+		u.EffectiveStorageQuotaBytes = nil
+		return
+	}
+	quota := s.effectiveStorageQuotaBytes(u)
+	if quota <= 0 {
+		u.EffectiveStorageQuotaBytes = nil
+		return
+	}
+	u.EffectiveStorageQuotaBytes = &quota
 }
 
 func bookFormat(filename string) (string, bool) {
@@ -687,6 +939,14 @@ func loginBackgroundURL(backgroundPath string) *string {
 		return nil
 	}
 	v := "/api/v1/system/login-background"
+	return &v
+}
+
+func avatarURL(userID int64, avatarPath *string) *string {
+	if avatarPath == nil || strings.TrimSpace(*avatarPath) == "" {
+		return nil
+	}
+	v := fmt.Sprintf("/api/v1/users/%d/avatar", userID)
 	return &v
 }
 
