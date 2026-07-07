@@ -41,8 +41,7 @@ func (s *Server) FindUserByID(id int64) (*model.User, error) {
 	if err := s.db.First(&u, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
-	u.StorageUsedBytes = s.storageUsedBytes(u.ID)
-	u.AvatarURL = avatarURL(u.ID, u.AvatarPath)
+	s.fillUserComputed(&u)
 	return &u, nil
 }
 
@@ -329,7 +328,7 @@ func (s *Server) logout(c *gin.Context) {
 
 func (s *Server) me(c *gin.Context) {
 	u := middleware.CurrentUser(c)
-	u.StorageUsedBytes = s.storageUsedBytes(u.ID)
+	s.fillUserComputed(u)
 	common.RespondJSON(c, middleware.GetRequestID(c), u)
 }
 
@@ -643,7 +642,7 @@ func (s *Server) respondSession(c *gin.Context, u *model.User) {
 		return
 	}
 	setRefreshCookie(c, refreshToken, s.cfg.RefreshTokenTTL, s.cfg.AppEnv == "production")
-	u.StorageUsedBytes = s.storageUsedBytes(u.ID)
+	s.fillUserComputed(u)
 	common.RespondJSON(c, middleware.GetRequestID(c), AuthSession{AccessToken: access, TokenType: "Bearer", ExpiresIn: expires, User: u})
 }
 
@@ -777,10 +776,53 @@ func (s *Server) removeAssetFile(relative string) error {
 	return os.Remove(path)
 }
 
+// storageUsedBytes 返回用户已用的存储空间（字节）。
+// 只统计私人书籍（visibility = private），公共图书不计入用户配额。
 func (s *Server) storageUsedBytes(userID int64) int64 {
 	var total int64
-	_ = s.db.Model(&model.Book{}).Where("owner_user_id = ? AND deleted_at IS NULL", userID).Select("COALESCE(SUM(file_size), 0)").Scan(&total).Error
+	_ = s.db.Model(&model.Book{}).
+		Where("owner_user_id = ? AND visibility = ? AND deleted_at IS NULL", userID, model.BookVisibilityPrivate).
+		Select("COALESCE(SUM(file_size), 0)").Scan(&total).Error
 	return total
+}
+
+// storageQuotaEnforced 判断是否对该用户执行存储配额限制。
+// 管理员不受配额限制。
+func (s *Server) storageQuotaEnforced(u *model.User) bool {
+	if u == nil {
+		return false
+	}
+	return u.Role != model.UserRoleAdmin
+}
+
+// effectiveStorageQuotaBytes 返回该用户实际生效的存储配额（字节）。
+// 用户设置了专属配额时使用专属值，否则回退到全局默认配额。
+// 返回值 <= 0 表示不限制。
+func (s *Server) effectiveStorageQuotaBytes(u *model.User) int64 {
+	if u != nil && u.StorageQuotaBytes != nil {
+		return *u.StorageQuotaBytes
+	}
+	return int64(s.loadSettings().DefaultUserStorageQuotaMB) * 1024 * 1024
+}
+
+// fillUserComputed 填充 User 的计算字段：已用存储、生效配额、头像 URL。
+// EffectiveStorageQuotaBytes 为 nil 表示不限制（管理员，或生效配额 <= 0）。
+func (s *Server) fillUserComputed(u *model.User) {
+	if u == nil {
+		return
+	}
+	u.StorageUsedBytes = s.storageUsedBytes(u.ID)
+	u.AvatarURL = avatarURL(u.ID, u.AvatarPath)
+	if !s.storageQuotaEnforced(u) {
+		u.EffectiveStorageQuotaBytes = nil
+		return
+	}
+	quota := s.effectiveStorageQuotaBytes(u)
+	if quota <= 0 {
+		u.EffectiveStorageQuotaBytes = nil
+		return
+	}
+	u.EffectiveStorageQuotaBytes = &quota
 }
 
 func bookFormat(filename string) (string, bool) {

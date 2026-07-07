@@ -94,10 +94,17 @@ export interface User {
   status: UserStatus
   storage_quota_bytes: number | null
   storage_used_bytes: number
+  effective_storage_quota_bytes: number | null
   created_at?: string
   last_login_at?: string | null
 }
 ```
+
+存储配额字段说明：
+
+- `storage_quota_bytes`：用户的专属配额（字节），由管理员设置。`null` 表示未设置专属配额，套用全局默认；`0` 表示不限制。
+- `storage_used_bytes`：用户已用的存储空间（字节），**只统计私人书籍**，公共图书不计入。
+- `effective_storage_quota_bytes`：实际生效的配额上限（字节，只读计算字段）。`null` 表示不限制（管理员，或生效配额 ≤ 0）；否则为具体的字节上限。前端应优先用此字段展示配额和计算使用比例，无需自行判断角色或查询全局设置。
 
 ### AuthSession
 
@@ -421,7 +428,7 @@ GET /api/v1/users/me
 
 权限：登录。
 
-响应：`User`，必须包含 `storage_quota_bytes` 和 `storage_used_bytes`。
+响应：`User`，必须包含 `storage_quota_bytes`、`storage_used_bytes` 和 `effective_storage_quota_bytes`。
 
 ### 修改当前用户信息
 
@@ -558,6 +565,14 @@ tag_ids=<optional comma separated>
 响应：`BookshelfItem`。
 
 常见错误码：`book_format_not_supported`、`payload_too_large`、`storage_quota_exceeded`、`validation_failed`。
+
+存储配额规则：
+
+- 私有图书上传前校验存储配额。已用空间（只统计私有图书）加上本次文件大小超过生效配额时，返回 `storage_quota_exceeded`（HTTP 403）。
+- 生效配额取值：用户设置了专属配额（`storage_quota_bytes`）则用专属值，否则套用全局默认（`default_user_storage_quota_mb`）。
+- 配额值为 `0` 或负数表示不限制。
+- 管理员上传私有图书不受配额限制。
+- 公共图书上传（`POST /api/v1/library/books/upload`）不计入用户配额，也不校验配额。
 
 ### 我的书架列表
 
@@ -742,7 +757,10 @@ POST /api/v1/library/books/upload
 
 响应：`LibraryBook`。
 
-规则：上传后返回 `library_status='approved'`；不自动加入上传者书架。
+规则：
+
+- 上传后返回 `library_status='approved'`；不自动加入上传者书架。
+- 公共图书不计入用户存储配额，也不校验配额，任何登录用户均可上传。
 
 ### 下架自己上传的公共图书
 
@@ -1122,6 +1140,14 @@ interface AdminUpdateUserRequest {
 
 响应：`User`。
 
+`storage_quota_bytes` 规则：
+
+- 只有管理员可以修改，用于给指定用户设置专属存储配额。
+- 传具体字节数（≥ 0）设置专属配额；传 `0` 表示该用户不限制。
+- 传 `null` 清除专属配额，该用户回退到全局默认配额 `default_user_storage_quota_mb`。
+- 不传该字段则保持不变。
+- 传负数返回 `validation_failed`。
+
 ### 修改用户状态
 
 ```http
@@ -1289,6 +1315,7 @@ PUT /api/v1/admin/system/settings
 规则：
 
 - `max_upload_size_mb` 不能超过启动时 `REQUEST_BODY_LIMIT_MB`。
+- `default_user_storage_quota_mb` 是全局默认的每用户私人书籍存储配额（MB），必须 `>= 0`；`0` 表示默认不限制。仅对未设置专属配额（`storage_quota_bytes = null`）的用户生效。
 - `library_review_required` 保留用于兼容旧配置，当前不影响公共图书上传状态。
 - `site_icon_url` 和 `login_background_url` 为只读字段，通过专用接口上传和删除。
 

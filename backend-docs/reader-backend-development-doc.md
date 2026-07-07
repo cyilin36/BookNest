@@ -348,7 +348,7 @@ CREATE UNIQUE INDEX idx_users_email_unique_not_null ON users(email) WHERE email 
 - `username` 必填且唯一。
 - `email` 可为空，非空唯一。
 - 禁用用户不能登录、刷新 token 或访问受保护接口。
-- `storage_quota_bytes` 为空时使用系统默认配额。
+- `storage_quota_bytes` 为用户专属配额（字节）：为空时套用全局默认配额 `default_user_storage_quota_mb`；值为 `0` 表示不限制。仅管理员可修改。
 - `avatar_path` 存储头像文件相对路径，可为空。默认头像路径格式为 `default/<avatar_name>.svg`，自定义头像路径格式为 `avatars/<user_id>/avatar-<uuid>.<ext>`。
 
 ### 6.2 refresh_tokens
@@ -786,8 +786,9 @@ DELETE /api/v1/admin/users/:id
 - 管理员不能删除自己。
 - 禁用用户时撤销该用户全部 refresh token。
 - 删除用户时清除该用户账号、refresh token、书架、阅读进度、书签、拥有图书及图书文件/封面文件；若该用户拥有公共图书，同时清除其他用户引用这些图书产生的书架项、阅读进度和书签。
-- `/users/me` 返回当前用户基础信息时必须包含 `storage_quota_bytes` 和 `storage_used_bytes`。
-- `storage_used_bytes` 第一版按当前用户私有上传且未软删除的 `books.file_size` 汇总，不包含引自公共图书馆的引用。
+- `/users/me` 返回当前用户基础信息时必须包含 `storage_quota_bytes`、`storage_used_bytes` 和 `effective_storage_quota_bytes`。
+- `storage_used_bytes` 按当前用户私有上传（`visibility = 'private'`）且未软删除的 `books.file_size` 汇总，不包含公共图书，也不包含引自公共图书馆的引用。
+- `effective_storage_quota_bytes` 为只读计算字段，表示该用户实际生效的配额上限（字节）；`null` 表示不限制（管理员，或生效配额 ≤ 0）。详见 10.5 节。
 
 ### 10.4 用户头像
 
@@ -937,6 +938,96 @@ func avatarURL(userID int64, avatarPath *string) *string {
 5. **文件隔离**：每个用户的自定义头像存储在独立目录 `avatars/<user_id>/`
 6. **旧文件清理**：上传新头像或设置默认头像时自动删除旧的自定义头像
 
+### 10.5 用户存储配额
+
+#### 数据库字段
+
+- `users.storage_quota_bytes` (BIGINT, nullable)：用户专属配额（字节），由管理员设置。
+
+#### 配额规则
+
+存储配额只针对**私人书籍**（`visibility = private`）。公共图书（`visibility = public`）既不计入用户已用空间，上传时也不校验配额。
+
+配额生效逻辑：
+
+1. **管理员不受配额限制**。管理员上传私人书籍时跳过所有配额校验。
+2. 普通用户上传私人书籍时校验：`已用空间 + 本次文件大小 > 生效配额` 则拒绝，返回 `storage_quota_exceeded`（HTTP 403）。
+3. 生效配额取值：
+   - 用户设置了专属配额（`storage_quota_bytes` 非空）则使用专属值；
+   - 否则套用全局默认配额 `default_user_storage_quota_mb`（默认 10240 MB = 10 GB）。
+4. 生效配额 `<= 0`（包括专属配额或全局默认被设为 `0`）表示**不限制**。
+
+#### 已用空间统计
+
+`storage_used_bytes` 只统计当前用户 `visibility = private` 且未软删除的 `books.file_size` 汇总，不包含引自公共图书馆的引用，也不包含该用户上传的公共图书。
+
+```go
+func (s *Server) storageUsedBytes(userID int64) int64 {
+    var total int64
+    _ = s.db.Model(&model.Book{}).
+        Where("owner_user_id = ? AND visibility = ? AND deleted_at IS NULL", userID, model.BookVisibilityPrivate).
+        Select("COALESCE(SUM(file_size), 0)").Scan(&total).Error
+    return total
+}
+```
+
+#### 用户模型计算字段
+
+`User` 响应包含三个存储相关字段：
+
+- `storage_quota_bytes`（数据库字段）：专属配额，`null` 表示未设置。
+- `storage_used_bytes`（计算字段）：已用空间（仅私人书籍）。
+- `effective_storage_quota_bytes`（计算字段）：实际生效的配额上限。`null` 表示不限制（管理员，或生效配额 `<= 0`）；否则为具体字节上限。前端可直接用此字段展示配额和计算使用比例，无需自行判断角色或查询全局设置。
+
+三个辅助函数：
+
+```go
+// 是否对该用户执行配额限制（管理员不受限）
+func (s *Server) storageQuotaEnforced(u *model.User) bool {
+    if u == nil {
+        return false
+    }
+    return u.Role != model.UserRoleAdmin
+}
+
+// 该用户实际生效的配额（字节），<= 0 表示不限制
+func (s *Server) effectiveStorageQuotaBytes(u *model.User) int64 {
+    if u != nil && u.StorageQuotaBytes != nil {
+        return *u.StorageQuotaBytes
+    }
+    return int64(s.loadSettings().DefaultUserStorageQuotaMB) * 1024 * 1024
+}
+
+// 填充 User 计算字段：已用空间、生效配额、头像 URL
+func (s *Server) fillUserComputed(u *model.User) {
+    if u == nil {
+        return
+    }
+    u.StorageUsedBytes = s.storageUsedBytes(u.ID)
+    u.AvatarURL = avatarURL(u.ID, u.AvatarPath)
+    if !s.storageQuotaEnforced(u) {
+        u.EffectiveStorageQuotaBytes = nil
+        return
+    }
+    quota := s.effectiveStorageQuotaBytes(u)
+    if quota <= 0 {
+        u.EffectiveStorageQuotaBytes = nil
+        return
+    }
+    u.EffectiveStorageQuotaBytes = &quota
+}
+```
+
+#### 管理员调整配额
+
+管理员通过 `PATCH /api/v1/admin/users/:id` 修改单个用户的 `storage_quota_bytes`：
+
+- 传具体数值（`>= 0`）设置专属配额，`0` 表示该用户不限制。
+- 传 `null` 清除专属配额，该用户回退到全局默认配额。
+- 负数返回 `validation_failed`。
+
+管理员通过 `PUT /api/v1/admin/system/settings` 修改全局默认配额 `default_user_storage_quota_mb`（`>= 0`，`0` 表示默认不限制）。
+
 ## 11. 文件存储和上传
 
 真实目录：
@@ -1019,7 +1110,7 @@ txt
 3. 创建 temp 文件。
 4. 流式读取上传内容并写入 temp 文件。
 5. 同时计算 SHA-256 和文件大小。
-6. 校验扩展名、格式、大小、用户配额。
+6. 校验扩展名、格式、大小；私人书籍且非管理员时校验用户配额（公共图书和管理员跳过配额校验，详见 10.5 节）。
 7. 开启数据库事务。
 8. 插入 `books` 记录，先写空路径或临时路径。
 9. 根据 `book_id` 生成正式相对路径。
@@ -1847,6 +1938,7 @@ DELETE /api/v1/admin/users/:id
 管理自己的阅读进度             否    是        是
 管理自己的书签                 否    是        是
 管理用户                       否    否        是
+调整用户存储配额               否    否        是
 上下架公共图书                 否    否        是
 物理删除公共图书               否    否        是
 管理系统分类                   否    否        是
@@ -2211,7 +2303,7 @@ bash smoke.sh
 9. MVP 需要解析 EPUB/PDF/TXT 元数据、封面和章节目录。
 10. TXT 必须解析章节目录，前端先请求章节目录，再按章节请求正文。
 11. 分类和标签由管理员统一维护，普通用户只能从已有分类、标签中选择。
-12. 需要用户存储配额，管理员可调整单个用户配额。
+12. 需要用户存储配额：默认 10 GB，只限制私人书籍，公共图书不计入；管理员不受配额限制，且可调整每个用户的配额。
 13. 不允许匿名浏览公共图书馆；公共图书馆仅登录用户可访问。
 14. 所有真实文件路径必须由 `storage` 模块生成和校验。
 15. 阅读文件和封面访问必须携带 Authorization；EPUB 内嵌资源访问必须携带 Authorization 或后端签名 URL，且两种方式都必须通过阅读权限校验。
