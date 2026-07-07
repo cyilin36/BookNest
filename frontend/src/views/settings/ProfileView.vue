@@ -47,9 +47,15 @@ const avatarUrl = computed(() => {
   return `${profile.value.avatar_url}?t=${avatarVersion.value}`
 })
 
+const storageUnlimited = computed(() => {
+  if (!profile.value) return false
+  return profile.value.effective_storage_quota_bytes === null
+})
+
 const storagePercentage = computed(() => {
-  if (!profile.value || !profile.value.storage_quota_bytes) return 0
-  return Math.round((profile.value.storage_used_bytes / profile.value.storage_quota_bytes) * 100)
+  const quota = profile.value?.effective_storage_quota_bytes
+  if (!profile.value || !quota) return 0
+  return Math.min(100, Math.round((profile.value.storage_used_bytes / quota) * 100))
 })
 
 const storageUsedText = computed(() => {
@@ -58,8 +64,8 @@ const storageUsedText = computed(() => {
 })
 
 const storageQuotaText = computed(() => {
-  if (!profile.value || !profile.value.storage_quota_bytes) return '无限制'
-  return formatBytes(profile.value.storage_quota_bytes)
+  if (!profile.value || storageUnlimited.value) return '无限制'
+  return formatBytes(profile.value.effective_storage_quota_bytes as number)
 })
 
 function formatBytes(bytes: number): string {
@@ -245,9 +251,15 @@ onMounted(loadProfile)
           <div class="profile-section">
             <div class="section-header">
               <h3 class="section-title">存储空间</h3>
-              <p class="section-description">{{ storageUsedText }} / {{ storageQuotaText }}</p>
+              <p class="section-description">已用 {{ storageUsedText }} / {{ storageQuotaText }}</p>
             </div>
-            <n-progress type="line" :percentage="storagePercentage" :show-indicator="false" />
+            <n-progress
+              v-if="!storageUnlimited"
+              type="line"
+              :percentage="storagePercentage"
+              :indicator-placement="'inside'"
+            />
+            <n-tag v-else type="success" :bordered="false" round>不限存储空间</n-tag>
           </div>
 
           <n-divider />

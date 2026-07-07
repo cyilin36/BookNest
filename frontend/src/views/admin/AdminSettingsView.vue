@@ -199,8 +199,11 @@ onMounted(loadSettings)
         <n-form-item label="最大上传 MB">
           <n-input-number v-model:value="form.max_upload_size_mb" :min="1" />
         </n-form-item>
-        <n-form-item label="默认配额 MB">
-          <n-input-number v-model:value="form.default_user_storage_quota_mb" :min="0" />
+        <n-form-item label="默认用户配额 MB">
+          <div class="quota-field">
+            <n-input-number v-model:value="form.default_user_storage_quota_mb" :min="0" :step="1024" />
+            <p>普通用户未设置专属配额时套用此默认值，只统计私人书籍。0 表示默认不限制。</p>
+          </div>
         </n-form-item>
         <div class="toolbar">
           <n-button type="primary" attr-type="submit" :loading="saving">保存设置</n-button>
@@ -215,6 +218,19 @@ onMounted(loadSettings)
 .settings-form {
   max-width: 720px;
   padding: 18px;
+}
+
+.quota-field {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.quota-field p {
+  margin: 0;
+  color: var(--color-text-sec);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .icon-setting {

@@ -57,6 +57,7 @@ export interface User {
   status: UserStatus
   storage_quota_bytes: number | null
   storage_used_bytes: number
+  effective_storage_quota_bytes: number | null
   created_at?: string
   last_login_at?: string | null
 }
