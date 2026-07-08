@@ -687,6 +687,12 @@ frontend/src/views/upload/UploadView.vue
 - `cover`：可选封面文件。
 - `title`、`author`、`description`、`category_ids`、`tag_ids`：可选元数据和分类标签。
 
+内容去重：
+
+- 后端按文件内容（SHA-256）去重，命中时返回 HTTP 409，响应体在顶层附带 `details` 指向已存在的那本书。`client.ts` 的 `AppAPIError` 透传该 `details` 字段。
+- 私有上传命中 `book_already_in_bookshelf`（比对上传者本人私有书籍），公共上传命中 `book_already_in_library`（比对全站公共图书，`details` 含 `owner_username`）。
+- 命中去重时不弹一闪而过的 message，而是用 `useDialog` 警告弹窗提示《书名》已存在，并提供“查看这本书”跳转到对应书架项（`/bookshelf/:id`）或公共图书详情（`/library/:id`）。`details` 缺失时回退展示后端错误 message，不提供跳转。
+
 ### 设置
 
 位置：

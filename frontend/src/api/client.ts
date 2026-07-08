@@ -9,13 +9,15 @@ export class AppAPIError extends Error {
   code: string
   requestId?: string
   status?: number
+  details?: unknown
 
-  constructor(message: string, code: string, requestId?: string, status?: number) {
+  constructor(message: string, code: string, requestId?: string, status?: number, details?: unknown) {
     super(message)
     this.name = 'AppAPIError'
     this.code = code
     this.requestId = requestId
     this.status = status
+    this.details = details
   }
 }
 
@@ -113,7 +115,7 @@ apiClient.interceptors.response.use(
     const responsePayload = error.response?.data
     const payload = responsePayload instanceof Blob ? await parseBlobError(responsePayload, error.response?.headers?.['content-type']) : responsePayload
     if (payload?.error) {
-      throw new AppAPIError(payload.error.message, payload.error.code, payload.request_id, error.response?.status)
+      throw new AppAPIError(payload.error.message, payload.error.code, payload.request_id, error.response?.status, payload.details)
     }
     throw new AppAPIError(error.message || '网络请求失败', 'network_error', undefined, error.response?.status)
   }

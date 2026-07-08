@@ -17,8 +17,20 @@ export interface APIErrorBody {
   message: string
 }
 
+export interface DuplicateBookDetails {
+  id: number
+  title: string
+  author: string | null
+  format: BookFormat
+  cover_url: string | null
+  visibility: BookVisibility
+  library_status: LibraryStatus | null
+  owner_username?: string
+}
+
 export interface APIErrorPayload {
   error: APIErrorBody
+  details?: unknown
   request_id: string
 }
 

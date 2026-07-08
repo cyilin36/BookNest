@@ -70,6 +70,18 @@ func (s *Server) uploadBook(c *gin.Context, visibility string) {
 			return
 		}
 	}
+	// 按文件内容（file_hash）去重：私人书籍仅比对上传者自己的书架，公共图书比对全站。
+	if dup, ok := s.findDuplicateBook(stored.Hash, visibility, u.ID); ok {
+		if visibility == model.BookVisibilityPrivate {
+			// 私人书籍文件名带 uuid 前缀，是独立物理文件，命中重复时删除刚写入的文件。
+			_ = os.Remove(stored.AbsolutePath)
+			common.RespondErrorWithDetails(c, middleware.GetRequestID(c), common.ErrBookAlreadyInShelf, s.duplicateBookRef(dup))
+			return
+		}
+		// 公共图书文件名为纯 hash，命中重复时刚写入的文件与已存在图书共用同一物理路径，不能删除。
+		common.RespondErrorWithDetails(c, middleware.GetRequestID(c), common.ErrBookAlreadyInLibrary, s.duplicateBookRef(dup))
+		return
+	}
 	title := c.PostForm("title")
 	if strings.TrimSpace(title) == "" {
 		title = strings.TrimSuffix(header.Filename, "."+format)
@@ -1438,6 +1450,49 @@ func (s *Server) bookshelfProgressFor(userID, bookID int64) *float64 {
 		return progress.Percentage
 	}
 	return nil
+}
+
+// DuplicateBookRef 用于在上传去重命中时，向客户端提示是哪一本已存在的图书。
+type DuplicateBookRef struct {
+	ID            int64   `json:"id"`
+	Title         string  `json:"title"`
+	Author        *string `json:"author"`
+	Format        string  `json:"format"`
+	CoverURL      *string `json:"cover_url"`
+	Visibility    string  `json:"visibility"`
+	LibraryStatus *string `json:"library_status,omitempty"`
+	OwnerUsername *string `json:"owner_username,omitempty"`
+}
+
+// findDuplicateBook 依据文件内容 hash 查找是否已存在相同图书。
+// 私人书籍：仅比对该用户自己、未删除的私人书籍（私人书为硬删除，deleted_at IS NULL 即现存）。
+// 公共图书：比对全站公共图书，且不过滤 deleted_at / library_status，
+// 因此被状态删除（library_status='deleted'）但行仍保留的公共书也会被视为已存在，阻止重复上传。
+func (s *Server) findDuplicateBook(hash, visibility string, userID int64) (model.Book, bool) {
+	var b model.Book
+	q := s.db.Where("file_hash = ? AND visibility = ?", hash, visibility)
+	if visibility == model.BookVisibilityPrivate {
+		q = q.Where("owner_user_id = ? AND deleted_at IS NULL", userID)
+	}
+	if err := q.First(&b).Error; err != nil {
+		return model.Book{}, false
+	}
+	return b, true
+}
+
+// duplicateBookRef 将命中的重复图书转换为对外提示结构。
+func (s *Server) duplicateBookRef(b model.Book) DuplicateBookRef {
+	ref := DuplicateBookRef{
+		ID: b.ID, Title: b.Title, Author: b.Author, Format: b.Format,
+		CoverURL: coverURL(b.ID, b.CoverPath), Visibility: b.Visibility, LibraryStatus: b.LibraryStatus,
+	}
+	if b.Visibility == model.BookVisibilityPublic {
+		var owner model.User
+		if s.db.Select("username").First(&owner, "id = ?", b.OwnerUserID).Error == nil && owner.Username != "" {
+			ref.OwnerUsername = &owner.Username
+		}
+	}
+	return ref
 }
 
 func (s *Server) libraryDTO(b model.Book, ownerUsername string, bookshelfID *int64) LibraryBookDTO {

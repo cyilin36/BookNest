@@ -1111,14 +1111,15 @@ txt
 4. 流式读取上传内容并写入 temp 文件。
 5. 同时计算 SHA-256 和文件大小。
 6. 校验扩展名、格式、大小；私人书籍且非管理员时校验用户配额（公共图书和管理员跳过配额校验，详见 10.5 节）。
-7. 开启数据库事务。
-8. 插入 `books` 记录，先写空路径或临时路径。
-9. 根据 `book_id` 生成正式相对路径。
-10. 移动 temp 文件到正式路径。
-11. 解析元数据、封面和章节。
-12. 更新 `books.file_path`、元数据、封面路径和解析状态。
-13. 私有上传创建 `bookshelves` 记录；公共上传不创建书架记录。
-14. 提交事务。
+7. 按 `file_hash` 去重（详见 11.1 节）：私人书籍比对上传者自己的私人书，公共图书比对全站公共书；命中重复直接返回 409，不进入事务。
+8. 开启数据库事务。
+9. 插入 `books` 记录，先写空路径或临时路径。
+10. 根据 `book_id` 生成正式相对路径。
+11. 移动 temp 文件到正式路径。
+12. 解析元数据、封面和章节。
+13. 更新 `books.file_path`、元数据、封面路径和解析状态。
+14. 私有上传创建 `bookshelves` 记录；公共上传不创建书架记录。
+15. 提交事务。
 
 文件操作无法被数据库事务自动回滚，涉及文件的 service 必须写补偿逻辑：
 
@@ -1126,6 +1127,28 @@ txt
 - 数据库插入失败：删除 temp。
 - 文件移动失败：回滚事务，删除 temp。
 - 事务提交失败：删除正式文件和封面文件。
+
+### 11.1 书籍去重
+
+去重依据是文件内容的 SHA-256（`books.file_hash`），在配额校验之后、数据库事务之前进行，命中即拦截，不会重复入库。实现见 `findDuplicateBook`。
+
+私人书籍（`visibility='private'`）：
+
+- 比对范围仅限**上传者本人现存的私人书籍**（`owner_user_id = 当前用户 AND deleted_at IS NULL`）。
+- 私人书为硬删除（`hardDeleteBookData` 物理清除行），因此 `deleted_at IS NULL` 即代表现存，不存在软删残留。
+- 命中返回 `book_already_in_bookshelf`（HTTP 409）。
+- 私人书文件名带 uuid 前缀，是独立物理文件，命中时**删除刚写入的文件**。
+
+公共图书（`visibility='public'`）：
+
+- 比对范围为**全站公共图书**，不按用户区分。
+- 查询**不过滤** `deleted_at` / `library_status`，因此被状态删除（`library_status='deleted'`）但行仍保留的公共书也视为已存在，阻止重复上传。
+- 命中返回 `book_already_in_library`（HTTP 409），响应 `details` 携带已存在图书信息（id、title、author、format、cover_url、visibility、library_status、owner_username）。
+- 公共书文件名为纯 hash，命中时刚写入的文件与已存在图书**共用同一物理路径，不能删除**（删除会破坏已存在的书）。
+
+边界：管理员通过 DELETE 接口硬删除的公共书行被彻底清除，无法被去重拦截，再次上传等于重新入库，属预期行为。
+
+未加数据库唯一约束：历史数据可能已存在重复行（公共书可能已被多用户加入书架、产生阅读进度），加唯一索引的迁移需先安全合并重复行，风险高。应用层查重已满足需求。若日后确认数据干净，可再单独做带去重逻辑的迁移加索引。
 
 ## 12. 图书解析
 
@@ -1376,6 +1399,7 @@ tag_ids=<optional comma separated>
 - 文件路径：`books/private/user-{user_id}/{book_id}.{ext}`
 - `cover` 可选，支持 `png`、`jpg/jpeg`、`webp`，最大 5MB。
 - 传入 `cover` 时优先使用上传封面；未传入时 EPUB 会尝试自动提取封面。
+- 按 `file_hash` 去重，比对范围仅限上传者本人现存私人书籍；命中重复返回 `book_already_in_bookshelf`（409），详见 11.1 节。
 
 ### 13.2 我的书架
 
@@ -1552,6 +1576,7 @@ order=asc|desc
 - `category_ids`、`tag_ids` 写入 `book_categories`、`book_tags`，作为公共图书馆元数据。
 - `cover` 可选，支持 `png`、`jpg/jpeg`、`webp`，最大 5MB。
 - 传入 `cover` 时优先使用上传封面；未传入时 EPUB 会尝试自动提取封面。
+- 按 `file_hash` 全站去重，命中已存在的公共图书时返回 `book_already_in_library`（409），并在 `details` 中附带已存在图书信息，详见 11.1 节。
 
 编辑自己上传的公共图书：
 

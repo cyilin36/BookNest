@@ -564,7 +564,29 @@ tag_ids=<optional comma separated>
 
 响应：`BookshelfItem`。
 
-常见错误码：`book_format_not_supported`、`payload_too_large`、`storage_quota_exceeded`、`validation_failed`。
+常见错误码：`book_format_not_supported`、`payload_too_large`、`storage_quota_exceeded`、`book_already_in_bookshelf`、`validation_failed`。
+
+去重规则：
+
+- 按文件内容（SHA-256）去重。上传的文件与该用户**自己现存的私有书籍**内容相同时，返回 `book_already_in_bookshelf`（HTTP 409），不会重复入库。
+- 比对范围仅限上传者本人的私有书籍，不涉及他人书架，也不涉及公共图书。
+- 409 响应体附带 `details` 字段，指向已存在的那本书：
+
+```jsonc
+{
+  "error": { "code": "book_already_in_bookshelf", "message": "相同图书已在你的书架中" },
+  "details": {
+    "id": 123,
+    "title": "示例书名",
+    "author": "作者",
+    "format": "epub",
+    "cover_url": "/api/v1/...",
+    "visibility": "private",
+    "library_status": null
+  },
+  "request_id": "..."
+}
+```
 
 存储配额规则：
 
@@ -761,6 +783,25 @@ POST /api/v1/library/books/upload
 
 - 上传后返回 `library_status='approved'`；不自动加入上传者书架。
 - 公共图书不计入用户存储配额，也不校验配额，任何登录用户均可上传。
+- 按文件内容（SHA-256）去重，比对范围为全站公共图书。命中已存在的公共图书时返回 `book_already_in_library`（HTTP 409），不会重复入库，且刚上传的物理文件不会被删除（公共图书按 hash 命名，与已存在图书共用同一物理文件）。被状态删除（`library_status='deleted'`）但记录仍保留的公共图书也视为已存在，会阻止重复上传。
+- 409 响应体附带 `details` 字段，指向已存在的那本公共图书（含 `owner_username`）：
+
+```jsonc
+{
+  "error": { "code": "book_already_in_library", "message": "相同图书已存在于公共图书馆" },
+  "details": {
+    "id": 456,
+    "title": "示例书名",
+    "author": "作者",
+    "format": "epub",
+    "cover_url": "/api/v1/...",
+    "visibility": "public",
+    "library_status": "approved",
+    "owner_username": "someone"
+  },
+  "request_id": "..."
+}
+```
 
 ### 下架自己上传的公共图书
 
@@ -1402,6 +1443,7 @@ refresh_token_invalid
 book_not_accessible
 book_not_found
 book_already_in_bookshelf
+book_already_in_library
 book_format_not_supported
 book_file_missing
 book_file_delete_failed

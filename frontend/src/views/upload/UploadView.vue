@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { useMessage } from 'naive-ui'
+import { useDialog, useMessage } from 'naive-ui'
 import { useRoute, useRouter } from 'vue-router'
 import { CloudUpload, Library, LockKeyhole } from 'lucide-vue-next'
 import CoverUploadField from '@/components/book/CoverUploadField.vue'
 import PageShell from '@/components/common/PageShell.vue'
+import { AppAPIError } from '@/api/client'
+import type { DuplicateBookDetails } from '@/api/types'
 import { useUpload } from '@/composables/useUpload'
 import { useTaxonomyOptions } from '@/composables/useTaxonomyOptions'
 import { useSystemStore } from '@/stores/system'
@@ -12,6 +14,7 @@ import { useSystemStore } from '@/stores/system'
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const dialog = useDialog()
 const system = useSystemStore()
 const { uploading, uploadPrivate, uploadPublic } = useUpload()
 const { categoryOptions, tagOptions, loading: taxonomyLoading } = useTaxonomyOptions()
@@ -25,6 +28,29 @@ const accept = computed(() => system.supportedFormats.map((format) => `.${format
 
 function handleFiles(files: FileList | null) {
   file.value = files?.[0] || null
+}
+
+function isDuplicateDetails(value: unknown): value is DuplicateBookDetails {
+  return typeof value === 'object' && value !== null && typeof (value as { id?: unknown }).id === 'number'
+}
+
+function handleDuplicate(error: AppAPIError) {
+  const existing = isDuplicateDetails(error.details) ? error.details : null
+  const toLibrary = error.code === 'book_already_in_library'
+  const path = existing ? (toLibrary ? `/library/${existing.id}` : `/bookshelf/${existing.id}`) : null
+  const owner = toLibrary && existing?.owner_username ? `（上传者：${existing.owner_username}）` : ''
+  const content = existing
+    ? `《${existing.title}》已存在${owner}，不会重复入库。`
+    : error.message
+  dialog.warning({
+    title: toLibrary ? '公共图书馆已有此书' : '书架中已有此书',
+    content,
+    positiveText: path ? '查看这本书' : undefined,
+    negativeText: '知道了',
+    onPositiveClick: () => {
+      if (path) router.push(path)
+    }
+  })
 }
 
 async function submit() {
@@ -46,6 +72,10 @@ async function submit() {
     message.success(target.value === 'public' ? '公共图书已上传' : '已上传到书架')
     router.push(target.value === 'public' ? `/library/${result.id}` : `/bookshelf/${result.id}`)
   } catch (error) {
+    if (error instanceof AppAPIError && (error.code === 'book_already_in_bookshelf' || error.code === 'book_already_in_library')) {
+      handleDuplicate(error)
+      return
+    }
     message.error(error instanceof Error ? error.message : '上传失败')
   }
 }
